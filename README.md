@@ -13,8 +13,7 @@ This maintenance works with an executable bat file that is capable of different 
 6.1 Delete Browser Cache/Data Firefox
 6.2 Delete Browser Cache/Data Chrome
 6.3 Delete Browser Cache/Data Microsoft Edge
-7. Check and Repair Disk
-8. Flush DNS
-9. Battery Report
-10. Task List
-11. Automatic Mantainance
+7. Flush DNS
+8. Battery Report
+9. Task List
+10. Automatic Mantainance
