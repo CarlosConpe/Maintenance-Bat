@@ -45,6 +45,10 @@ No hay que instalar nada: usa Windows PowerShell 5.1 y WPF, que vienen con Windo
 
 **Herramientas.** Crear acceso directo, abrir la carpeta de registros, cambio de plan de energía (Equilibrado / Alto rendimiento) y accesos directos a Administrador de tareas, Monitor de recursos, Liberador de espacio, Optimizar unidades, Sensor de almacenamiento, Windows Update, aplicaciones instaladas, Restaurar sistema, Visor de eventos, Servicios, etc.
 
+**Actualizaciones.** Al abrir, la aplicación consulta en GitHub si hay una versión nueva y, si la hay, muestra un aviso con el botón *Descargar* (no envía ningún dato del equipo; se puede desactivar en *Herramientas*). Para actualizar, descomprime el ZIP nuevo encima de la carpeta actual.
+
+**Desinstalar.** En *Herramientas → Desinstalar...* se quitan las tareas programadas, los accesos directos y las preferencias, y opcionalmente los registros. Después solo queda borrar la carpeta de la aplicación. Desde la consola: `MaintenanceScript.bat -Uninstall` (añade `-RemoveLogs` para borrar también los registros). Los programas de arranque que hayas desactivado no se reactivan solos: hazlo antes desde *Arranque de Windows* si quieres.
+
 **Tema y preferencias.** El botón *Tema* de la barra lateral cambia entre automático (sigue a Windows), claro y oscuro. La aplicación recuerda el tema, los pasos elegidos, los días de temporales y la última carpeta analizada en `%APPDATA%\MaintenanceTool\settings.json`.
 
 ### Pasos de mantenimiento
@@ -98,6 +102,7 @@ Cada cambio se prueba en Windows con GitHub Actions (`.github/workflows/test.yml
 - Tareas programadas: crea, modifica, pausa, reanuda y elimina una tarea, y rechaza datos no válidos.
 - Registros: borra solo ejecuciones antiguas creadas por la herramienta y combina el historial de varias carpetas.
 - Acceso directo y notificación.
+- Desinstalación: quita tareas, accesos directos y preferencias sin tocar accesos de otros programas; comparación de versiones para el aviso de actualización.
 - Preferencias (incluidos archivos corruptos o con valores no válidos), analizador de espacio (tamaños correctos, sin seguir enlaces, sin borrar nada) y uso de procesos.
 - En la interfaz: sección Rendimiento, análisis de espacio en segundo plano y cambio a tema oscuro.
 - **Interfaz gráfica**: abre la ventana, recorre todas las secciones y ejecuta una simulación real a través de ella.

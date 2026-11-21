@@ -231,6 +231,12 @@ $script:LastLogDir = $null
           <Border x:Name="BannerUser" Background="#FEF3C7" CornerRadius="8" Padding="14" Margin="0,0,0,14" Visibility="Collapsed">
             <TextBlock x:Name="TxtBannerUser" TextWrapping="Wrap" Foreground="#92400E"/>
           </Border>
+          <Border x:Name="BannerUpdate" Background="#DBEAFE" CornerRadius="8" Padding="14" Margin="0,0,0,14" Visibility="Collapsed">
+            <DockPanel>
+              <Button x:Name="BtnUpdateOpen" DockPanel.Dock="Right" Style="{StaticResource Primary}" Margin="10,0,0,0" Content="Descargar"/>
+              <TextBlock x:Name="TxtBannerUpdate" TextWrapping="Wrap" Foreground="#1E3A8A" VerticalAlignment="Center"/>
+            </DockPanel>
+          </Border>
           <WrapPanel x:Name="HomeCards"/>
           <Border Style="{StaticResource Card}">
             <StackPanel>
@@ -552,7 +558,10 @@ $script:LastLogDir = $null
               <WrapPanel>
                 <Button x:Name="BtnShortcut" Style="{StaticResource Primary}" Content="Crear acceso directo (Escritorio y menú Inicio)"/>
                 <Button x:Name="BtnLogFolder" Style="{StaticResource Btn}" Content="Carpeta de registros"/>
+                <Button x:Name="BtnCheckUpdate" Style="{StaticResource Btn}" Content="Buscar actualizaciones"/>
+                <Button x:Name="BtnUninstall" Style="{StaticResource Danger}" Content="Desinstalar..."/>
               </WrapPanel>
+              <CheckBox x:Name="ChkAutoUpdate" Content="Comprobar si hay versión nueva al abrir (consulta GitHub, no envía datos del equipo)" Margin="0,0,0,8"/>
               <TextBlock x:Name="TxtAppInfo" Foreground="{DynamicResource Muted}" FontSize="12" TextWrapping="Wrap"/>
             </StackPanel>
           </Border>
@@ -1033,6 +1042,7 @@ function Set-Theme([string]$Mode) {
 }
 
 function Save-Settings {
+    if ($script:SkipSave) { return }
     try {
         $d = 0
         if ([int]::TryParse($ui.TxtTempDays.Text, [ref]$d) -and $d -ge 1 -and $d -le 365) { $script:Settings.TempDays = $d }
@@ -1133,6 +1143,63 @@ function Update-Perf {
         [void]$ui.PerfCards.Children.Add((New-Card 'Memoria' ('{0:N0}%' -f $used) ('{0:N1} GB libres de {1:N1} GB' -f $st.RamFreeGB, $st.RamTotalGB) $c))
     }
     [void]$ui.PerfCards.Children.Add((New-Card 'Procesos' "$($rows.Count)" 'En ejecución ahora' $script:Brush.Info))
+}
+
+# ----------------------------------------------------------------------------
+#  Actualizaciones y desinstalación
+# ----------------------------------------------------------------------------
+
+$script:Update = $null
+$script:UpdateUrl = $null
+
+function Start-UpdateCheck([bool]$Manual) {
+    if ($script:Update) { return }
+    $rs = [runspacefactory]::CreateRunspace()
+    $rs.Open()
+    $ps = [powershell]::Create()
+    $ps.Runspace = $rs
+    [void]$ps.AddScript({ param($Engine) . $Engine; Get-LatestRelease }).AddArgument($script:Engine)
+    $script:Update = New-Object psobject -Property @{ Shell = $ps; Runspace = $rs; Handle = $ps.BeginInvoke(); Manual = $Manual }
+    if ($Manual) { $ui.BtnCheckUpdate.IsEnabled = $false; $ui.BtnCheckUpdate.Content = 'Buscando...' }
+    $script:UpdateTimer.Start()
+}
+
+function Receive-UpdateCheck {
+    $u = $script:Update
+    if (-not $u -or -not $u.Handle.IsCompleted) { return }
+    $script:UpdateTimer.Stop()
+    $script:Update = $null
+    $ui.BtnCheckUpdate.IsEnabled = $true
+    $ui.BtnCheckUpdate.Content = 'Buscar actualizaciones'
+    $rel = $null
+    try { $rel = @($u.Shell.EndInvoke($u.Handle)) | Select-Object -Last 1 } catch { }
+    try { $u.Shell.Dispose(); $u.Runspace.Close(); $u.Runspace.Dispose() } catch { }
+    if ($rel -and (Compare-AppVersion $rel.Version $script:AppVersion) -gt 0) {
+        $script:UpdateUrl = $rel.Url
+        $ui.TxtBannerUpdate.Text = ("Hay una versión nueva: {0} (tienes la {1}). Descárgala, descomprímela encima de esta carpeta y vuelve a abrir la aplicación." -f $rel.Version, $script:AppVersion)
+        $ui.BannerUpdate.Visibility = 'Visible'
+        if ($u.Manual) { Show-Page 'PageHome' }
+    } elseif ($u.Manual) {
+        if ($rel) { Show-Info ("Tienes la última versión ({0})." -f $script:AppVersion) }
+        else { Show-Info 'No se pudo consultar GitHub. Revisa la conexión a Internet o inténtalo más tarde.' }
+    }
+}
+
+function Invoke-Uninstall {
+    $a = Get-InstalledArtifacts
+    $lines = @()
+    if ($a.Tasks.Count) { $lines += ('- {0} tarea(s) programada(s)' -f $a.Tasks.Count) }
+    if ($a.Shortcuts.Count) { $lines += ('- {0} acceso(s) directo(s)' -f $a.Shortcuts.Count) }
+    if ($a.SettingsDir) { $lines += '- Preferencias guardadas' }
+    $msg = "Se quitará lo que la aplicación dejó en el equipo:`n`n" + $(if ($lines.Count) { $lines -join "`n" } else { '- (no hay tareas, accesos directos ni preferencias)' })
+    $msg += "`n`nNo se deshacen los programas de arranque que desactivaste (puedes reactivarlos antes desde Arranque de Windows).`n`n¿Continuar?"
+    if (-not (Confirm-Action $msg)) { return }
+    $logs = $false
+    if ($a.LogRoots.Count) { $logs = Confirm-Action ("¿Borrar también los registros de mantenimiento?`n`n" + ($a.LogRoots -join "`n")) }
+    $done = @(Uninstall-MaintenanceTool -RemoveLogs:$logs)
+    $script:SkipSave = $true
+    Show-Info ("Desinstalación terminada.`n`n" + $(if ($done.Count) { ($done | ForEach-Object { '- ' + $_ }) -join "`n" } else { 'No había nada que quitar.' }) + "`n`nPara terminar, cierra la aplicación y borra esta carpeta:`n" + $script:AppDir)
+    $window.Close()
 }
 
 # ----------------------------------------------------------------------------
@@ -1248,6 +1315,13 @@ $script:SpaceTimer.Add_Tick({ try { Receive-SpaceScan } catch { } })
 $script:PerfTimer = New-Object System.Windows.Threading.DispatcherTimer
 $script:PerfTimer.Interval = [TimeSpan]::FromSeconds(2)
 $script:PerfTimer.Add_Tick({ try { Update-Perf } catch { } })
+$ui.BtnCheckUpdate.Add_Click({ Start-UpdateCheck $true })
+$ui.BtnUpdateOpen.Add_Click({ if ($script:UpdateUrl) { Open-Target $script:UpdateUrl '' } })
+$ui.BtnUninstall.Add_Click({ Invoke-Safe { Invoke-Uninstall } })
+$ui.ChkAutoUpdate.Add_Click({ $script:Settings.CheckUpdates = [bool]$ui.ChkAutoUpdate.IsChecked; Save-Settings })
+$script:UpdateTimer = New-Object System.Windows.Threading.DispatcherTimer
+$script:UpdateTimer.Interval = [TimeSpan]::FromMilliseconds(500)
+$script:UpdateTimer.Add_Tick({ try { Receive-UpdateCheck } catch { } })
 $script:Timer = New-Object System.Windows.Threading.DispatcherTimer
 $script:Timer.Interval = [TimeSpan]::FromMilliseconds(200)
 $script:Timer.Add_Tick({ try { Receive-RunOutput } catch { Add-LogLine ('Error de interfaz: ' + $_.Exception.Message) } })
@@ -1272,6 +1346,7 @@ Set-Theme $script:Settings.Theme
 New-StepChecks $ui.MaintSteps $script:Settings.MaintSteps
 $ui.TxtTempDays.Text = "$($script:Settings.TempDays)"
 $ui.TxtSpacePath.Text = $script:Settings.SpacePath
+$ui.ChkAutoUpdate.IsChecked = [bool]$script:Settings.CheckUpdates
 New-StepChecks $ui.SchSteps @('Diagnostico', 'Temporales', 'Caches', 'Dns', 'Optimizar')
 $daysEs = [ordered]@{ Monday = 'Lunes'; Tuesday = 'Martes'; Wednesday = 'Miércoles'; Thursday = 'Jueves'; Friday = 'Viernes'; Saturday = 'Sábado'; Sunday = 'Domingo' }
 $ui.CmbSchDay.ItemsSource = @($daysEs.Keys | ForEach-Object { New-Object psobject -Property @{ K = $_; L = $daysEs[$_] } })
@@ -1356,6 +1431,14 @@ if ($SelfTest) {
     Check (Test-Path -LiteralPath (Join-Path $spaceDir 'grande\video.bin')) 'espacio: no borra nada'
     Remove-Item -LiteralPath $spaceDir -Recurse -Force -ErrorAction SilentlyContinue
 
+    Start-UpdateCheck $false
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($script:Update -and $sw.Elapsed.TotalSeconds -lt 30) { Receive-UpdateCheck; Start-Sleep -Milliseconds 200 }
+    Check ($null -eq $script:Update) 'comprobacion de version termina sin bloquear'
+    Check ($ui.BtnCheckUpdate.IsEnabled) 'boton de actualizacion queda habilitado'
+    $a = Get-InstalledArtifacts
+    Check ($null -ne $a) 'lista lo instalado para desinstalar'
+
     foreach ($m in 'Oscuro', 'Claro', 'Auto') { Set-Theme $m }
     Set-Theme 'Oscuro'
     Check ($window.Resources['CardBg'].Color.ToString() -eq '#FF1E293B') 'tema oscuro aplicado'
@@ -1370,6 +1453,9 @@ if ($SelfTest) {
     exit 0
 }
 
-$window.Add_ContentRendered({ Invoke-Safe { Update-Home } })
+$window.Add_ContentRendered({
+        Invoke-Safe { Update-Home }
+        if ($script:Settings.CheckUpdates) { Start-UpdateCheck $false }
+    })
 Show-Page 'PageHome'
 [void]$window.ShowDialog()

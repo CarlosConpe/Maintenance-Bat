@@ -275,6 +275,48 @@ try {
     Assert (@($u2.Rows | Where-Object { $_.Id -eq $PID }).Count -eq 1) 'incluye este proceso'
     Assert ($u2.CpuTotal -ge 0 -and $u2.CpuTotal -le 100) ('CPU total en rango (' + $u2.CpuTotal + ')')
 
+    Write-Host 'Versiones'
+    Assert ((Compare-AppVersion '4.3.0' '4.2.0') -eq 1) '4.3.0 es mas nueva que 4.2.0'
+    Assert ((Compare-AppVersion 'v4.10.0' '4.9.1') -eq 1) 'compara numericamente y acepta prefijo v'
+    Assert ((Compare-AppVersion '4.2.0' '4.2.0') -eq 0) 'iguales'
+    Assert ((Compare-AppVersion '4.1.0' '4.2.0') -eq -1) 'mas vieja'
+    Assert ((Compare-AppVersion 'basura' '4.2.0') -eq 0) 'version no valida no provoca aviso'
+
+    if ($onWindows -and (Test-IsAdmin)) {
+        Write-Host 'Desinstalacion'
+        $oldAppData = $env:APPDATA
+        $env:APPDATA = Join-Path $base 'appdata'
+        try {
+            Save-AppSettings (Get-DefaultSettings)
+            Assert (Test-Path -LiteralPath (Get-SettingsPath)) 'preparacion: preferencias creadas'
+            New-MaintenanceSchedule -Name 'CI Desinstalar' -Frequency 'Diaria' -Time '05:00' -StepKeys @('Dns')
+            $made = @(New-AppShortcut -Locations @('Desktop'))
+            $foreign = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Otro programa.lnk'
+            $sc = (New-Object -ComObject WScript.Shell).CreateShortcut($foreign); $sc.TargetPath = 'C:\Windows\notepad.exe'; $sc.Save()
+            $a = Get-InstalledArtifacts
+            Assert (@($a.Tasks | Where-Object { $_.Name -eq 'CI Desinstalar' }).Count -eq 1) 'detecta la tarea'
+            Assert ($a.Shortcuts.Count -ge 1) 'detecta el acceso directo'
+            $done = @(Uninstall-MaintenanceTool)
+            Assert ($done.Count -ge 3) ('informa lo eliminado (' + $done.Count + ')')
+            Assert (@(Get-MaintenanceSchedules).Count -eq 0) 'quita las tareas programadas'
+            Assert (-not (Test-Path -LiteralPath $made[0])) 'quita el acceso directo'
+            Assert (Test-Path -LiteralPath $foreign) 'no toca accesos directos de otros programas'
+            Assert (-not (Test-Path -LiteralPath (Split-Path -Parent (Get-SettingsPath)))) 'quita las preferencias'
+            Assert (@(Uninstall-MaintenanceTool).Count -eq 0) 'segunda vez: no hay nada que quitar'
+        } finally {
+            $env:APPDATA = $oldAppData
+            try { Remove-MaintenanceSchedule 'CI Desinstalar' } catch { }
+            foreach ($m in @($made)) { if ($m) { Remove-Item -LiteralPath $m -Force -ErrorAction SilentlyContinue } }
+            Remove-Item -LiteralPath $foreign -Force -ErrorAction SilentlyContinue
+        }
+
+        $lr2 = Join-Path $base 'logs-all'
+        New-TestFile (Join-Path (Join-Path $lr2 ((Get-Date).ToString('yyyy-MM-dd_HH-mm-ss'))) 'resumen.log')
+        New-TestFile (Join-Path $lr2 'personal\nota.txt')
+        Assert ((Remove-OldLogs -Root $lr2 -All) -eq 1) 'borrar todos los registros incluye los recientes'
+        Assert (Test-Path -LiteralPath (Join-Path $lr2 'personal\nota.txt')) 'pero no carpetas ajenas'
+    }
+
     # ------------------------------------------------------------------ varios
     Write-Host 'Varios'
     $keys = @(Get-StepList | ForEach-Object { $_.Key })

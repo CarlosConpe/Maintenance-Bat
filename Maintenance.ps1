@@ -13,7 +13,9 @@ param(
     [switch]$NoPause,
     [switch]$GuiMode,
     [switch]$NoNotify,
-    [int]$KeepLogDays = 90
+    [int]$KeepLogDays = 90,
+    [switch]$Uninstall,
+    [switch]$RemoveLogs
 )
 
 # ============================================================================
@@ -30,7 +32,8 @@ param(
 #  Este archivo debe mantenerse en ASCII puro (PowerShell 5.1 lo lee como ANSI).
 # ============================================================================
 
-$script:AppVersion = '4.2.0'
+$script:AppVersion = '4.3.0'
+$script:RepoSlug = 'CarlosConpe/Maintenance-Bat'
 $script:TaskName = 'MaintenanceTool'
 $script:TaskPath = '\MaintenanceTool\'
 $script:GuiMode = [bool]$GuiMode
@@ -574,9 +577,9 @@ function Get-LegacyLogRoot {
 function Remove-OldLogs {
     # Borra ejecuciones con mas de $Days dias. Solo toca carpetas cuyo nombre
     # es una fecha generada por esta herramienta y que contienen resumen.log.
-    param([string]$Root, [int]$Days = 90, [string]$Except)
+    param([string]$Root, [int]$Days = 90, [string]$Except, [switch]$All)
     $removed = 0
-    if ($Days -lt 1 -or -not $Root -or -not (Test-Path -LiteralPath $Root -PathType Container)) { return $removed }
+    if ((-not $All -and $Days -lt 1) -or -not $Root -or -not (Test-Path -LiteralPath $Root -PathType Container)) { return $removed }
     $limit = (Get-Date).AddDays(-$Days)
     foreach ($d in @(Get-ChildItem -LiteralPath $Root -Directory -ErrorAction SilentlyContinue)) {
         if ($d.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
@@ -585,7 +588,7 @@ function Remove-OldLogs {
         if (-not (Test-Path -LiteralPath (Join-Path $d.FullName 'resumen.log'))) { continue }
         $when = $null
         try { $when = [datetime]::ParseExact($d.Name, 'yyyy-MM-dd_HH-mm-ss', $null) } catch { continue }
-        if ($when -ge $limit) { continue }
+        if (-not $All -and $when -ge $limit) { continue }
         [void](Invoke-SafeClean -Path $d.FullName -Simulate $false)
         try { [IO.Directory]::Delete($d.FullName, $false); $removed++ } catch { }
     }
@@ -861,6 +864,7 @@ function Get-DefaultSettings {
         TempDays   = 7
         MaintSteps = @(Get-StepList | Where-Object { $_.Rec } | ForEach-Object { $_.Key })
         SpacePath  = $env:USERPROFILE
+        CheckUpdates = $true
     }
 }
 
@@ -876,6 +880,7 @@ function Get-AppSettings {
         $valid = @(Get-StepList | ForEach-Object { $_.Key })
         if ($null -ne $j.MaintSteps) { $s.MaintSteps = @(@($j.MaintSteps) | ForEach-Object { "$_" } | Where-Object { $valid -contains $_ }) }
         if ($j.SpacePath) { $s.SpacePath = "$($j.SpacePath)" }
+        if ($j.CheckUpdates -is [bool]) { $s.CheckUpdates = $j.CheckUpdates }
     } catch { }
     return $s
 }
@@ -886,7 +891,7 @@ function Save-AppSettings {
     if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop | Out-Null }
     $obj = New-Object psobject -Property @{
         Theme = $Settings.Theme; TempDays = [int]$Settings.TempDays
-        MaintSteps = @($Settings.MaintSteps); SpacePath = $Settings.SpacePath
+        MaintSteps = @($Settings.MaintSteps); SpacePath = $Settings.SpacePath; CheckUpdates = [bool]$Settings.CheckUpdates
     }
     $obj | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $Path -Encoding UTF8 -ErrorAction Stop
 }
@@ -1014,6 +1019,87 @@ function Get-ProcessUsage {
 }
 
 # ----------------------------------------------------------------------------
+#  Actualizaciones y desinstalacion
+# ----------------------------------------------------------------------------
+
+function Compare-AppVersion {
+    # 1 si $A es mas nueva que $B, -1 si es mas vieja, 0 si son iguales.
+    param([string]$A, [string]$B)
+    $va = $null; $vb = $null
+    if (-not [version]::TryParse(($A -replace '^[vV]', ''), [ref]$va)) { return 0 }
+    if (-not [version]::TryParse(($B -replace '^[vV]', ''), [ref]$vb)) { return 0 }
+    return $va.CompareTo($vb)
+}
+
+function Get-LatestRelease {
+    # Consulta la ultima version publicada en GitHub. No envia datos del
+    # equipo; devuelve $null si no hay conexion o no hay releases.
+    param([int]$TimeoutSec = 8)
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $r = Invoke-RestMethod -Uri ("https://api.github.com/repos/$($script:RepoSlug)/releases/latest") -Headers @{ 'User-Agent' = 'MaintenanceTool' } -TimeoutSec $TimeoutSec -UseBasicParsing -ErrorAction Stop
+        return New-Object psobject -Property @{ Version = ("$($r.tag_name)" -replace '^[vV]', ''); Url = "$($r.html_url)"; Name = "$($r.name)" }
+    } catch { return $null }
+}
+
+function Get-InstalledArtifacts {
+    # Lo que la herramienta deja fuera de su carpeta.
+    $tasks = @()
+    foreach ($t in @(Get-ScheduledTask -TaskPath $script:TaskPath -ErrorAction SilentlyContinue)) { $tasks += New-Object psobject -Property @{ Path = $t.TaskPath; Name = $t.TaskName } }
+    foreach ($t in @(Get-ScheduledTask -TaskPath '\' -TaskName $script:TaskName -ErrorAction SilentlyContinue)) { $tasks += New-Object psobject -Property @{ Path = $t.TaskPath; Name = $t.TaskName } }
+    $links = @()
+    $shell = $null
+    foreach ($loc in @('Desktop', 'Programs')) {
+        $dir = [Environment]::GetFolderPath($loc)
+        if (-not $dir) { continue }
+        $lnk = Join-Path $dir 'Maintenance Tool.lnk'
+        if (-not (Test-Path -LiteralPath $lnk)) { continue }
+        try {
+            if (-not $shell) { $shell = New-Object -ComObject WScript.Shell }
+            if ($shell.CreateShortcut($lnk).TargetPath -like '*\MaintenanceApp.bat') { $links += $lnk }
+        } catch { }
+    }
+    $settingsDir = Split-Path -Parent (Get-SettingsPath)
+    return New-Object psobject -Property @{
+        Tasks = $tasks; Shortcuts = $links
+        SettingsDir = $(if (Test-Path -LiteralPath $settingsDir) { $settingsDir } else { $null })
+        LogRoots = @(@((Get-DefaultLogRoot), (Get-LegacyLogRoot)) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Container) })
+    }
+}
+
+function Uninstall-MaintenanceTool {
+    # Quita tareas programadas, accesos directos y preferencias. Con
+    # -RemoveLogs tambien borra los registros (solo carpetas de la herramienta).
+    # No toca la carpeta de la aplicacion ni deshace cambios en el arranque.
+    param([switch]$RemoveLogs)
+    $a = Get-InstalledArtifacts
+    $done = New-Object System.Collections.ArrayList
+    foreach ($t in $a.Tasks) {
+        try { Unregister-ScheduledTask -TaskPath $t.Path -TaskName $t.Name -Confirm:$false -ErrorAction Stop; [void]$done.Add('Tarea: ' + $t.Name) } catch { }
+    }
+    try {
+        $svc = New-Object -ComObject Schedule.Service
+        $svc.Connect()
+        $svc.GetFolder('\').DeleteFolder($script:TaskPath.Trim('\'), 0)
+    } catch { }
+    foreach ($l in $a.Shortcuts) {
+        try { Remove-Item -LiteralPath $l -Force -ErrorAction Stop; [void]$done.Add('Acceso directo: ' + $l) } catch { }
+    }
+    if ($a.SettingsDir) {
+        foreach ($f in @('settings.json')) { Remove-Item -LiteralPath (Join-Path $a.SettingsDir $f) -Force -ErrorAction SilentlyContinue }
+        try { [IO.Directory]::Delete($a.SettingsDir, $false); [void]$done.Add('Preferencias: ' + $a.SettingsDir) } catch { }
+    }
+    if ($RemoveLogs) {
+        foreach ($root in $a.LogRoots) {
+            $n = Remove-OldLogs -Root $root -Days 0 -All
+            try { [IO.Directory]::Delete($root, $false) } catch { }
+            if ($n) { [void]$done.Add(('Registros: {0} ejecucion(es) en {1}' -f $n, $root)) }
+        }
+    }
+    return @($done)
+}
+
+# ----------------------------------------------------------------------------
 #  Programa principal
 # ----------------------------------------------------------------------------
 
@@ -1049,6 +1135,14 @@ function Invoke-Main {
     $script:TempDays = $TempDays
     $interactive = -not $Unattended
 
+    if ($Uninstall) {
+        $done = @(Uninstall-MaintenanceTool -RemoveLogs:$RemoveLogs)
+        Write-Host ''
+        if ($done.Count) { foreach ($d in $done) { Write-Host ('  Eliminado - ' + $d) } } else { Write-Host '  No habia nada que quitar.' }
+        Write-Host ''
+        Write-Host ('  Ya puedes borrar la carpeta de la aplicacion: ' + $PSScriptRoot)
+        Wait-Exit 0
+    }
     if ($InstallTask) { Install-MaintenanceTask; Wait-Exit 0 }
     if ($RemoveTask) { Remove-MaintenanceTask; Wait-Exit 0 }
 
