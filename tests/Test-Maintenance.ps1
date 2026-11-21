@@ -227,6 +227,54 @@ try {
         } finally { foreach ($m in $made) { Remove-Item -LiteralPath $m -Force -ErrorAction SilentlyContinue } }
     }
 
+    Write-Host 'Preferencias'
+    $sp = Join-Path $base 'cfg\settings.json'
+    $d0 = Get-AppSettings -Path $sp
+    Assert ($d0.Theme -eq 'Auto' -and $d0.TempDays -eq 7) 'valores por defecto sin archivo'
+    Save-AppSettings @{ Theme = 'Oscuro'; TempDays = 14; MaintSteps = @('Dns', 'Temporales'); SpacePath = 'C:\x' } -Path $sp
+    $d1 = Get-AppSettings -Path $sp
+    Assert ($d1.Theme -eq 'Oscuro' -and $d1.TempDays -eq 14) 'guarda y lee tema y dias'
+    Assert ((@($d1.MaintSteps) -join ',') -eq 'Dns,Temporales') ('guarda los pasos (' + (@($d1.MaintSteps) -join ',') + ')')
+    Set-Content -LiteralPath $sp -Value '{"Theme":"Rosa","TempDays":9999,"MaintSteps":["Dns","NoExiste"]}'
+    $d2 = Get-AppSettings -Path $sp
+    Assert ($d2.Theme -eq 'Auto' -and $d2.TempDays -eq 7 -and (@($d2.MaintSteps) -join ',') -eq 'Dns') 'ignora valores no validos'
+    Set-Content -LiteralPath $sp -Value 'esto no es json'
+    Assert ((Get-AppSettings -Path $sp).Theme -eq 'Auto') 'archivo corrupto: usa valores por defecto'
+
+    Write-Host 'Analizador de espacio'
+    $sd = Join-Path $base 'space'
+    New-Item -ItemType Directory -Path (Join-Path $sd 'grande\sub') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $sd 'chica') -Force | Out-Null
+    [IO.File]::WriteAllBytes((Join-Path $sd 'grande\sub\a.bin'), (New-Object byte[] 50000))
+    [IO.File]::WriteAllBytes((Join-Path $sd 'grande\b.bin'), (New-Object byte[] 30000))
+    [IO.File]::WriteAllBytes((Join-Path $sd 'chica\c.txt'), (New-Object byte[] 1000))
+    [IO.File]::WriteAllBytes((Join-Path $sd 'suelto.dat'), (New-Object byte[] 5000))
+    $tgt = Join-Path $base 'space-target'
+    New-Item -ItemType Directory -Path $tgt -Force | Out-Null
+    [IO.File]::WriteAllBytes((Join-Path $tgt 'enorme.bin'), (New-Object byte[] 900000))
+    if ($onWindows) { New-Item -ItemType Junction -Path (Join-Path $sd 'enlace') -Target $tgt | Out-Null }
+    else { New-Item -ItemType SymbolicLink -Path (Join-Path $sd 'enlace') -Target $tgt | Out-Null }
+    $prog = [hashtable]::Synchronized(@{ Count = 0 })
+    $rep = Get-SpaceReport -Path $sd -TopFiles 2 -Progress $prog
+    Assert ($rep.TotalBytes -eq 86000) ('total correcto sin seguir enlaces (' + $rep.TotalBytes + ')')
+    Assert ($rep.Carpetas[0].Nombre -eq 'grande' -and $rep.Carpetas[0].Bytes -eq 80000 -and $rep.Carpetas[0].Archivos -eq 2) 'carpeta mayor primero con su tamano recursivo'
+    Assert (@($rep.Carpetas | Where-Object { $_.Nombre -eq '(archivos sueltos)' }).Count -eq 1) 'cuenta los archivos sueltos'
+    Assert (@($rep.Carpetas | Where-Object { $_.Nombre -eq 'enlace' }).Count -eq 0) 'ignora el enlace'
+    Assert ($rep.ArchivosGrandes.Count -eq 2 -and $rep.ArchivosGrandes[0].Nombre -eq 'a.bin') 'top de archivos ordenado y limitado'
+    Assert ($prog.Count -eq 4) ('progreso cuenta archivos (' + $prog.Count + ')')
+    Assert (Test-Path -LiteralPath (Join-Path $sd 'grande\sub\a.bin')) 'no borra nada'
+    $threw = $false
+    try { Get-SpaceReport -Path (Join-Path $base 'no-existe') } catch { $threw = $true }
+    Assert $threw 'rechaza carpeta inexistente'
+
+    Write-Host 'Uso de procesos'
+    $u1 = Get-ProcessUsage
+    Start-Sleep -Milliseconds 300
+    $u2 = Get-ProcessUsage -Previous $u1.Sample
+    Assert (@($u2.Rows).Count -gt 3) 'lista procesos'
+    Assert (@($u2.Rows | Where-Object { $_.Id -eq $PID }).Count -eq 1) 'incluye este proceso'
+    Assert ($u2.CpuTotal -ge 0 -and $u2.CpuTotal -le 100) ('CPU total en rango (' + $u2.CpuTotal + ')')
+
     # ------------------------------------------------------------------ varios
     Write-Host 'Varios'
     $keys = @(Get-StepList | ForEach-Object { $_.Key })

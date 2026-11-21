@@ -30,7 +30,7 @@ param(
 #  Este archivo debe mantenerse en ASCII puro (PowerShell 5.1 lo lee como ANSI).
 # ============================================================================
 
-$script:AppVersion = '4.1.0'
+$script:AppVersion = '4.2.0'
 $script:TaskName = 'MaintenanceTool'
 $script:TaskPath = '\MaintenanceTool\'
 $script:GuiMode = [bool]$GuiMode
@@ -843,6 +843,174 @@ function Set-MaintenanceScheduleEnabled {
 function Start-MaintenanceSchedule {
     param([string]$Name)
     Start-ScheduledTask -TaskPath $script:TaskPath -TaskName $Name -ErrorAction Stop
+}
+
+# ----------------------------------------------------------------------------
+#  Preferencias (%APPDATA%\MaintenanceTool\settings.json)
+# ----------------------------------------------------------------------------
+
+function Get-SettingsPath {
+    $base = $env:APPDATA
+    if (-not $base) { $base = $env:USERPROFILE }
+    return (Join-Path $base 'MaintenanceTool\settings.json')
+}
+
+function Get-DefaultSettings {
+    return @{
+        Theme      = 'Auto'
+        TempDays   = 7
+        MaintSteps = @(Get-StepList | Where-Object { $_.Rec } | ForEach-Object { $_.Key })
+        SpacePath  = $env:USERPROFILE
+    }
+}
+
+function Get-AppSettings {
+    param([string]$Path = (Get-SettingsPath))
+    $s = Get-DefaultSettings
+    if (-not (Test-Path -LiteralPath $Path)) { return $s }
+    try {
+        $j = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if ($j.Theme -in @('Auto', 'Claro', 'Oscuro')) { $s.Theme = "$($j.Theme)" }
+        $d = 0
+        if ([int]::TryParse("$($j.TempDays)", [ref]$d) -and $d -ge 1 -and $d -le 365) { $s.TempDays = $d }
+        $valid = @(Get-StepList | ForEach-Object { $_.Key })
+        if ($null -ne $j.MaintSteps) { $s.MaintSteps = @(@($j.MaintSteps) | ForEach-Object { "$_" } | Where-Object { $valid -contains $_ }) }
+        if ($j.SpacePath) { $s.SpacePath = "$($j.SpacePath)" }
+    } catch { }
+    return $s
+}
+
+function Save-AppSettings {
+    param([hashtable]$Settings, [string]$Path = (Get-SettingsPath))
+    $dir = Split-Path -Parent $Path
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop | Out-Null }
+    $obj = New-Object psobject -Property @{
+        Theme = $Settings.Theme; TempDays = [int]$Settings.TempDays
+        MaintSteps = @($Settings.MaintSteps); SpacePath = $Settings.SpacePath
+    }
+    $obj | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $Path -Encoding UTF8 -ErrorAction Stop
+}
+
+function Test-SystemDarkMode {
+    try {
+        $v = Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name AppsUseLightTheme -ErrorAction Stop
+        return ($v.AppsUseLightTheme -eq 0)
+    } catch { return $false }
+}
+
+# ----------------------------------------------------------------------------
+#  Analizador de espacio (solo lectura)
+# ----------------------------------------------------------------------------
+
+function Get-SpaceReport {
+    # Tamano de cada subcarpeta directa de $Path y los $TopFiles archivos mas
+    # grandes. No sigue enlaces. $Progress (hashtable sincronizado, opcional)
+    # recibe el numero de archivos vistos.
+    param([string]$Path, [int]$TopFiles = 50, $Progress)
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Container)) { throw ('Carpeta no valida: ' + $Path) }
+    $root = New-Object IO.DirectoryInfo ([IO.Path]::GetFullPath($Path))
+    $files = New-Object 'System.Collections.Generic.List[object]'
+    $folders = @()
+    $state = @{ Count = 0; Errors = 0 }
+
+    $walk = {
+        param([IO.DirectoryInfo]$Dir)
+        $sum = [long]0
+        $n = 0
+        $stack = New-Object 'System.Collections.Generic.Stack[IO.DirectoryInfo]'
+        $stack.Push($Dir)
+        while ($stack.Count -gt 0) {
+            $d = $stack.Pop()
+            $entries = $null
+            try { $entries = $d.GetFileSystemInfos() } catch { $state.Errors++; continue }
+            foreach ($e in $entries) {
+                if ($e.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+                if ($e -is [IO.DirectoryInfo]) { $stack.Push($e); continue }
+                $len = [long]$e.Length
+                $sum += $len
+                $n++
+                $state.Count++
+                $files.Add($e)
+                if ($files.Count -gt (4 * $TopFiles + 200)) {
+                    $keep = @($files | Sort-Object Length -Descending | Select-Object -First $TopFiles)
+                    $files.Clear()
+                    foreach ($k in $keep) { $files.Add($k) }
+                }
+                if ($Progress -and ($state.Count % 500 -eq 0)) { $Progress.Count = $state.Count }
+            }
+        }
+        return @($sum, $n)
+    }
+
+    $looseBytes = [long]0
+    $looseCount = 0
+    $entries = @()
+    try { $entries = @($root.GetFileSystemInfos()) } catch { throw ('No se puede leer ' + $root.FullName + ': ' + $_.Exception.Message) }
+    foreach ($e in $entries) {
+        if ($e.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+        if ($e -is [IO.DirectoryInfo]) {
+            $r = & $walk $e
+            $folders += New-Object psobject -Property @{ Nombre = $e.Name; Ruta = $e.FullName; Bytes = [long]$r[0]; Archivos = [int]$r[1] }
+        } else {
+            $looseBytes += [long]$e.Length
+            $looseCount++
+            $state.Count++
+            $files.Add($e)
+        }
+    }
+    if ($looseCount -gt 0) {
+        $folders += New-Object psobject -Property @{ Nombre = '(archivos sueltos)'; Ruta = $root.FullName; Bytes = $looseBytes; Archivos = $looseCount }
+    }
+    $total = [long]0
+    foreach ($f in $folders) { $total += $f.Bytes }
+    foreach ($f in $folders) {
+        $f | Add-Member -NotePropertyName Tamano -NotePropertyValue (Format-Size $f.Bytes)
+        $f | Add-Member -NotePropertyName Porcentaje -NotePropertyValue $(if ($total -gt 0) { [math]::Round(100 * $f.Bytes / $total, 1) } else { 0 })
+    }
+    $top = @($files | Sort-Object Length -Descending | Select-Object -First $TopFiles | ForEach-Object {
+            New-Object psobject -Property @{
+                Nombre = $_.Name; Ruta = $_.FullName; Carpeta = $_.DirectoryName; Bytes = [long]$_.Length
+                Tamano = (Format-Size $_.Length); Modificado = $_.LastWriteTime.ToString('dd/MM/yyyy')
+            }
+        })
+    if ($Progress) { $Progress.Count = $state.Count }
+    return New-Object psobject -Property @{
+        Ruta = $root.FullName; TotalBytes = $total; Archivos = $state.Count; Errores = $state.Errors
+        Carpetas = @($folders | Sort-Object Bytes -Descending); ArchivosGrandes = $top
+    }
+}
+
+# ----------------------------------------------------------------------------
+#  Uso de CPU y memoria por proceso (solo lectura)
+# ----------------------------------------------------------------------------
+
+function Get-ProcessUsage {
+    # Devuelve una muestra nueva y, si se pasa la anterior, el % de CPU de
+    # cada proceso en el intervalo entre ambas.
+    param($Previous)
+    $now = Get-Date
+    $cpu = @{}
+    $rows = @()
+    $cores = [Environment]::ProcessorCount
+    foreach ($p in @(Get-Process -ErrorAction SilentlyContinue)) {
+        $t = $null
+        try { $t = $p.TotalProcessorTime.TotalMilliseconds } catch { }
+        if ($null -ne $t) { $cpu[$p.Id] = $t }
+        $pct = 0.0
+        if ($Previous -and $null -ne $t -and $Previous.Cpu.ContainsKey($p.Id)) {
+            $ms = ($now - $Previous.Time).TotalMilliseconds
+            if ($ms -gt 0) { $pct = [math]::Max(0, ($t - $Previous.Cpu[$p.Id]) / $ms / $cores * 100) }
+        }
+        $rows += New-Object psobject -Property @{
+            Nombre = $p.ProcessName; Id = $p.Id; Cpu = [math]::Round($pct, 1)
+            MemoriaBytes = [long]$p.WorkingSet64; Memoria = (Format-Size $p.WorkingSet64)
+        }
+    }
+    return New-Object psobject -Property @{
+        Sample = New-Object psobject -Property @{ Time = $now; Cpu = $cpu }
+        Rows = $rows
+        CpuTotal = [math]::Min(100, [math]::Round((($rows | Where-Object { $_.Id -ne 0 } | Measure-Object Cpu -Sum).Sum), 0))
+    }
 }
 
 # ----------------------------------------------------------------------------

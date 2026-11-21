@@ -40,8 +40,54 @@ $script:LastLogDir = $null
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Maintenance Tool" Width="1120" Height="740" MinWidth="900" MinHeight="600"
-        WindowStartupLocation="CenterScreen" Background="#F3F4F6" FontFamily="Segoe UI" FontSize="13">
+        WindowStartupLocation="CenterScreen" Background="{DynamicResource AppBg}" FontFamily="Segoe UI" FontSize="13">
   <Window.Resources>
+    <SolidColorBrush x:Key="AppBg" Color="#F3F4F6"/>
+    <SolidColorBrush x:Key="CardBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="InputBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="Fg" Color="#111827"/>
+    <SolidColorBrush x:Key="Muted" Color="#6B7280"/>
+    <SolidColorBrush x:Key="Line" Color="#E5E7EB"/>
+    <SolidColorBrush x:Key="Line2" Color="#D1D5DB"/>
+    <SolidColorBrush x:Key="Hover" Color="#DBEAFE"/>
+    <Style TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
+    </Style>
+    <Style TargetType="CheckBox">
+      <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
+    </Style>
+    <Style TargetType="TextBox">
+      <Setter Property="Background" Value="{DynamicResource InputBg}"/>
+      <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource Line2}"/>
+      <Setter Property="CaretBrush" Value="{DynamicResource Fg}"/>
+    </Style>
+    <Style TargetType="DataGridColumnHeader">
+      <Setter Property="Background" Value="{DynamicResource CardBg}"/>
+      <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}"/>
+      <Setter Property="BorderThickness" Value="0,0,0,1"/>
+      <Setter Property="Padding" Value="8,6"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style TargetType="DataGridCell">
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="8,0"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="DataGridCell">
+            <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+              <ContentPresenter VerticalAlignment="Center"/>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+      <Style.Triggers>
+        <Trigger Property="IsSelected" Value="True">
+          <Setter Property="Background" Value="{DynamicResource Hover}"/>
+        </Trigger>
+      </Style.Triggers>
+    </Style>
     <Style x:Key="Nav" TargetType="Button">
       <Setter Property="Foreground" Value="#D1D5DB"/>
       <Setter Property="Background" Value="Transparent"/>
@@ -67,9 +113,9 @@ $script:LastLogDir = $null
       </Style.Triggers>
     </Style>
     <Style x:Key="Btn" TargetType="Button">
-      <Setter Property="Background" Value="White"/>
-      <Setter Property="Foreground" Value="#111827"/>
-      <Setter Property="BorderBrush" Value="#D1D5DB"/>
+      <Setter Property="Background" Value="{DynamicResource CardBg}"/>
+      <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource Line2}"/>
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="Padding" Value="14,7"/>
       <Setter Property="Margin" Value="0,0,8,8"/>
@@ -96,30 +142,30 @@ $script:LastLogDir = $null
       <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
     <Style x:Key="Danger" TargetType="Button" BasedOn="{StaticResource Btn}">
-      <Setter Property="Foreground" Value="#B91C1C"/>
-      <Setter Property="BorderBrush" Value="#FCA5A5"/>
+      <Setter Property="Foreground" Value="#DC2626"/>
+      <Setter Property="BorderBrush" Value="#F87171"/>
     </Style>
     <Style x:Key="H1" TargetType="TextBlock">
       <Setter Property="FontSize" Value="24"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
-      <Setter Property="Foreground" Value="#111827"/>
+      <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
       <Setter Property="Margin" Value="0,0,0,4"/>
     </Style>
     <Style x:Key="Sub" TargetType="TextBlock">
-      <Setter Property="Foreground" Value="#6B7280"/>
+      <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
       <Setter Property="TextWrapping" Value="Wrap"/>
       <Setter Property="Margin" Value="0,0,0,16"/>
     </Style>
     <Style x:Key="H2" TargetType="TextBlock">
       <Setter Property="FontSize" Value="15"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
-      <Setter Property="Foreground" Value="#111827"/>
+      <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
       <Setter Property="Margin" Value="0,0,0,10"/>
     </Style>
     <Style x:Key="Card" TargetType="Border">
-      <Setter Property="Background" Value="White"/>
+      <Setter Property="Background" Value="{DynamicResource CardBg}"/>
       <Setter Property="CornerRadius" Value="10"/>
-      <Setter Property="BorderBrush" Value="#E5E7EB"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}"/>
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="Padding" Value="18"/>
       <Setter Property="Margin" Value="0,0,0,14"/>
@@ -130,9 +176,11 @@ $script:LastLogDir = $null
       <Setter Property="SelectionMode" Value="Single"/>
       <Setter Property="HeadersVisibility" Value="Column"/>
       <Setter Property="GridLinesVisibility" Value="Horizontal"/>
-      <Setter Property="HorizontalGridLinesBrush" Value="#F3F4F6"/>
-      <Setter Property="Background" Value="White"/>
-      <Setter Property="BorderBrush" Value="#E5E7EB"/>
+      <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource Line}"/>
+      <Setter Property="Background" Value="{DynamicResource CardBg}"/>
+      <Setter Property="RowBackground" Value="{DynamicResource CardBg}"/>
+      <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}"/>
       <Setter Property="RowHeight" Value="30"/>
       <Setter Property="CanUserAddRows" Value="False"/>
     </Style>
@@ -160,10 +208,13 @@ $script:LastLogDir = $null
         <Button x:Name="NavMaint" Style="{StaticResource Nav}" Tag="PageMaint" Content="Mantenimiento"/>
         <Button x:Name="NavStartup" Style="{StaticResource Nav}" Tag="PageStartup" Content="Arranque de Windows"/>
         <Button x:Name="NavSchedule" Style="{StaticResource Nav}" Tag="PageSchedule" Content="Tareas programadas"/>
+        <Button x:Name="NavSpace" Style="{StaticResource Nav}" Tag="PageSpace" Content="Espacio en disco"/>
+        <Button x:Name="NavPerf" Style="{StaticResource Nav}" Tag="PagePerf" Content="Rendimiento"/>
         <Button x:Name="NavHistory" Style="{StaticResource Nav}" Tag="PageHistory" Content="Historial"/>
         <Button x:Name="NavTools" Style="{StaticResource Nav}" Tag="PageTools" Content="Herramientas"/>
       </StackPanel>
       <StackPanel Grid.Row="2" Margin="22,0,16,20">
+        <Button x:Name="BtnTheme" Style="{StaticResource Nav}" Padding="0" Height="30" FontSize="12" Margin="0,0,0,10" Content="Tema: automático"/>
         <TextBlock x:Name="TxtAdmin" Foreground="#9CA3AF" FontSize="11" TextWrapping="Wrap"/>
         <TextBlock x:Name="TxtUser" Foreground="#6B7280" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"/>
       </StackPanel>
@@ -196,7 +247,7 @@ $script:LastLogDir = $null
                 <Button x:Name="BtnHomeSim" Style="{StaticResource Btn}" Content="Simular (no cambia nada)"/>
                 <Button x:Name="BtnHomeRefresh" Style="{StaticResource Btn}" Content="Actualizar"/>
               </WrapPanel>
-              <TextBlock Foreground="#6B7280" TextWrapping="Wrap" FontSize="12"
+              <TextBlock Foreground="{DynamicResource Muted}" TextWrapping="Wrap" FontSize="12"
                          Text="Limpieza rápida: temporales antiguos, caché de navegadores y DNS. Completo: añade punto de restauración, liberador de espacio, reparación de Windows (30-60 min), Windows Update y optimización de la unidad."/>
             </StackPanel>
           </Border>
@@ -254,8 +305,8 @@ $script:LastLogDir = $null
             </Grid.RowDefinitions>
             <StackPanel Margin="0,0,0,10">
               <TextBlock x:Name="TxtCurrent" Text="Listo." FontWeight="SemiBold" Margin="0,0,0,6"/>
-              <ProgressBar x:Name="Progress" Height="8" Minimum="0" Maximum="1" Value="0" Foreground="#2563EB" Background="#E5E7EB" BorderThickness="0"/>
-              <TextBlock x:Name="TxtProgressDetail" Foreground="#6B7280" FontSize="11" Margin="0,4,0,0"/>
+              <ProgressBar x:Name="Progress" Height="8" Minimum="0" Maximum="1" Value="0" Foreground="#2563EB" Background="{DynamicResource Line}" BorderThickness="0"/>
+              <TextBlock x:Name="TxtProgressDetail" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,4,0,0"/>
             </StackPanel>
             <DataGrid Grid.Row="1" x:Name="GridRun" MaxHeight="230" Margin="0,0,0,10">
               <DataGrid.Columns>
@@ -291,7 +342,7 @@ $script:LastLogDir = $null
           <Button x:Name="BtnStartupDisable" Style="{StaticResource Primary}" Content="Desactivar seleccionado"/>
           <Button x:Name="BtnStartupEnable" Style="{StaticResource Btn}" Content="Activar seleccionado"/>
           <Button x:Name="BtnStartupRefresh" Style="{StaticResource Btn}" Content="Actualizar"/>
-          <TextBlock x:Name="TxtStartupInfo" VerticalAlignment="Center" Foreground="#6B7280" Margin="6,0,0,8"/>
+          <TextBlock x:Name="TxtStartupInfo" VerticalAlignment="Center" Foreground="{DynamicResource Muted}" Margin="6,0,0,8"/>
         </WrapPanel>
         <DataGrid Grid.Row="2" x:Name="GridStartup">
           <DataGrid.Columns>
@@ -340,15 +391,15 @@ $script:LastLogDir = $null
             <DockPanel>
               <StackPanel DockPanel.Dock="Top">
                 <TextBlock Style="{StaticResource H2}" Text="Nueva tarea"/>
-                <TextBlock Text="Nombre" Foreground="#374151"/>
+                <TextBlock Text="Nombre" Foreground="{DynamicResource Muted}"/>
                 <TextBox x:Name="TxtSchName" Text="Limpieza semanal" Padding="4" Margin="0,2,0,8"/>
-                <TextBlock Text="Frecuencia" Foreground="#374151"/>
+                <TextBlock Text="Frecuencia" Foreground="{DynamicResource Muted}"/>
                 <ComboBox x:Name="CmbSchFreq" Margin="0,2,0,8"/>
-                <TextBlock Text="Día" Foreground="#374151"/>
+                <TextBlock Text="Día" Foreground="{DynamicResource Muted}"/>
                 <ComboBox x:Name="CmbSchDay" Margin="0,2,0,8"/>
-                <TextBlock Text="Hora (HH:mm)" Foreground="#374151"/>
+                <TextBlock Text="Hora (HH:mm)" Foreground="{DynamicResource Muted}"/>
                 <TextBox x:Name="TxtSchTime" Text="13:00" Padding="4" Margin="0,2,0,8"/>
-                <TextBlock Text="Pasos" Foreground="#374151" Margin="0,0,0,4"/>
+                <TextBlock Text="Pasos" Foreground="{DynamicResource Muted}" Margin="0,0,0,4"/>
               </StackPanel>
               <WrapPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
                 <Button x:Name="BtnSchCreate" Style="{StaticResource Primary}" Content="Crear tarea"/>
@@ -360,6 +411,89 @@ $script:LastLogDir = $null
             </DockPanel>
           </Border>
         </Grid>
+      </Grid>
+
+      <!-- ESPACIO -->
+      <Grid x:Name="PageSpace" Visibility="Collapsed">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <StackPanel>
+          <TextBlock Style="{StaticResource H1}" Text="Espacio en disco"/>
+          <TextBlock Style="{StaticResource Sub}" Text="Muestra qué carpetas y archivos ocupan más. Solo lectura: no borra nada. Doble clic en una fila para abrirla en el Explorador y decidir tú qué hacer."/>
+        </StackPanel>
+        <DockPanel Grid.Row="1" Margin="0,0,0,6">
+          <Button x:Name="BtnSpaceRun" DockPanel.Dock="Right" Style="{StaticResource Primary}" Content="Analizar"/>
+          <Button x:Name="BtnSpaceCancel" DockPanel.Dock="Right" Style="{StaticResource Danger}" Content="Cancelar" IsEnabled="False"/>
+          <Button x:Name="BtnSpaceBrowse" DockPanel.Dock="Right" Style="{StaticResource Btn}" Content="Examinar..."/>
+          <TextBox x:Name="TxtSpacePath" Padding="6" Margin="0,0,8,8" VerticalContentAlignment="Center"/>
+        </DockPanel>
+        <WrapPanel Grid.Row="2">
+          <Button x:Name="BtnSpaceUser" Style="{StaticResource Btn}" Padding="8,3" Content="Mi carpeta de usuario"/>
+          <Button x:Name="BtnSpaceDownloads" Style="{StaticResource Btn}" Padding="8,3" Content="Descargas"/>
+          <Button x:Name="BtnSpaceDrive" Style="{StaticResource Btn}" Padding="8,3" Content="Unidad del sistema"/>
+          <TextBlock x:Name="TxtSpaceStatus" VerticalAlignment="Center" Foreground="{DynamicResource Muted}" Margin="8,0,0,8"/>
+        </WrapPanel>
+        <Grid Grid.Row="3">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*"/>
+          </Grid.ColumnDefinitions>
+          <DockPanel Margin="0,0,14,0">
+            <TextBlock DockPanel.Dock="Top" Style="{StaticResource H2}" Text="Carpetas"/>
+            <DataGrid x:Name="GridSpaceFolders">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="Carpeta" Binding="{Binding Nombre}" Width="2*"/>
+                <DataGridTextColumn Header="Tamaño" Binding="{Binding Tamano}" Width="90"/>
+                <DataGridTextColumn Header="%" Binding="{Binding Porcentaje}" Width="55"/>
+                <DataGridTextColumn Header="Archivos" Binding="{Binding Archivos}" Width="80"/>
+              </DataGrid.Columns>
+            </DataGrid>
+          </DockPanel>
+          <DockPanel Grid.Column="1">
+            <TextBlock DockPanel.Dock="Top" Style="{StaticResource H2}" Text="Archivos más grandes"/>
+            <DataGrid x:Name="GridSpaceFiles">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="Archivo" Binding="{Binding Nombre}" Width="2*"/>
+                <DataGridTextColumn Header="Tamaño" Binding="{Binding Tamano}" Width="90"/>
+                <DataGridTextColumn Header="Modificado" Binding="{Binding Modificado}" Width="90"/>
+                <DataGridTextColumn Header="Carpeta" Binding="{Binding Carpeta}" Width="2*"/>
+              </DataGrid.Columns>
+            </DataGrid>
+          </DockPanel>
+        </Grid>
+      </Grid>
+
+      <!-- RENDIMIENTO -->
+      <Grid x:Name="PagePerf" Visibility="Collapsed">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <StackPanel>
+          <TextBlock Style="{StaticResource H1}" Text="Rendimiento"/>
+          <TextBlock Style="{StaticResource Sub}" Text="Programas que más consumen ahora mismo. Se actualiza cada 2 segundos mientras esta pantalla está abierta. Solo lectura."/>
+        </StackPanel>
+        <WrapPanel Grid.Row="1" x:Name="PerfCards"/>
+        <WrapPanel Grid.Row="2">
+          <TextBlock Text="Ordenar por:" VerticalAlignment="Center" Margin="0,0,8,8"/>
+          <RadioButton x:Name="RbPerfCpu" Content="CPU" IsChecked="True" Margin="0,0,12,8" VerticalAlignment="Center" Foreground="{DynamicResource Fg}"/>
+          <RadioButton x:Name="RbPerfMem" Content="Memoria" Margin="0,0,20,8" VerticalAlignment="Center" Foreground="{DynamicResource Fg}"/>
+          <Button x:Name="BtnPerfTaskmgr" Style="{StaticResource Btn}" Content="Abrir Administrador de tareas"/>
+        </WrapPanel>
+        <DataGrid Grid.Row="3" x:Name="GridPerf">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="Programa" Binding="{Binding Nombre}" Width="2*"/>
+            <DataGridTextColumn Header="CPU %" Binding="{Binding Cpu}" Width="80"/>
+            <DataGridTextColumn Header="Memoria" Binding="{Binding Memoria}" Width="100"/>
+            <DataGridTextColumn Header="PID" Binding="{Binding Id}" Width="80"/>
+          </DataGrid.Columns>
+        </DataGrid>
       </Grid>
 
       <!-- HISTORIAL -->
@@ -390,7 +524,7 @@ $script:LastLogDir = $null
           </DataGrid>
           <TextBox Grid.Column="1" x:Name="TxtHistoryLog" IsReadOnly="True" FontFamily="Consolas" FontSize="12"
                    VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap"
-                   Background="White" BorderBrush="#E5E7EB" Padding="10"/>
+                   BorderBrush="{DynamicResource Line}" Padding="10"/>
         </Grid>
       </Grid>
 
@@ -419,7 +553,7 @@ $script:LastLogDir = $null
                 <Button x:Name="BtnShortcut" Style="{StaticResource Primary}" Content="Crear acceso directo (Escritorio y menú Inicio)"/>
                 <Button x:Name="BtnLogFolder" Style="{StaticResource Btn}" Content="Carpeta de registros"/>
               </WrapPanel>
-              <TextBlock x:Name="TxtAppInfo" Foreground="#6B7280" FontSize="12" TextWrapping="Wrap"/>
+              <TextBlock x:Name="TxtAppInfo" Foreground="{DynamicResource Muted}" FontSize="12" TextWrapping="Wrap"/>
             </StackPanel>
           </Border>
           <Border Style="{StaticResource Card}">
@@ -452,6 +586,9 @@ $script:Brush = @{
     Ok = '#16A34A'; Warn = '#D97706'; Bad = '#DC2626'; Info = '#2563EB'; Muted = '#6B7280'
 }
 
+$script:Pages = @('PageHome', 'PageMaint', 'PageStartup', 'PageSchedule', 'PageSpace', 'PagePerf', 'PageHistory', 'PageTools')
+function Get-ThemeBrush([string]$Key) { return $window.Resources[$Key] }
+
 function New-Brush([string]$Hex) { return (New-Object System.Windows.Media.BrushConverter).ConvertFromString($Hex) }
 
 function Show-Info([string]$Text) { [System.Windows.MessageBox]::Show($window, $Text, 'Maintenance Tool', 'OK', 'Information') | Out-Null }
@@ -465,7 +602,7 @@ function Invoke-Safe([scriptblock]$Block) {
 }
 
 function Show-Page([string]$Name) {
-    foreach ($p in 'PageHome', 'PageMaint', 'PageStartup', 'PageSchedule', 'PageHistory', 'PageTools') {
+    foreach ($p in $script:Pages) {
         $ui[$p].Visibility = $(if ($p -eq $Name) { 'Visible' } else { 'Collapsed' })
     }
     foreach ($b in $ui.NavPanel.Children) {
@@ -477,25 +614,27 @@ function Show-Page([string]$Name) {
         'PageSchedule' { Invoke-Safe { Update-Schedules } }
         'PageHistory' { Invoke-Safe { Update-History } }
         'PageTools' { Update-PowerPlan }
+        'PageSpace' { if (-not $ui.TxtSpacePath.Text) { $ui.TxtSpacePath.Text = $script:Settings.SpacePath } }
     }
+    if ($Name -eq 'PagePerf') { Update-Perf; if (-not $SelfTest) { $script:PerfTimer.Start() } } else { $script:PerfTimer.Stop() }
 }
 
 function New-Card([string]$Title, [string]$Value, [string]$Sub, [string]$Color) {
     $b = New-Object System.Windows.Controls.Border
-    $b.Background = [System.Windows.Media.Brushes]::White
+    $b.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'CardBg')
     $b.CornerRadius = 10
-    $b.BorderBrush = New-Brush '#E5E7EB'
+    $b.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'Line')
     $b.BorderThickness = 1
     $b.Padding = 16
     $b.Margin = '0,0,14,14'
     $b.Width = 200
     $sp = New-Object System.Windows.Controls.StackPanel
     $t = New-Object System.Windows.Controls.TextBlock
-    $t.Text = $Title; $t.Foreground = New-Brush '#6B7280'; $t.FontSize = 12
+    $t.Text = $Title; $t.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'Muted'); $t.FontSize = 12
     $v = New-Object System.Windows.Controls.TextBlock
     $v.Text = $Value; $v.FontSize = 22; $v.FontWeight = 'SemiBold'; $v.Foreground = New-Brush $Color; $v.Margin = '0,4,0,2'
     $s = New-Object System.Windows.Controls.TextBlock
-    $s.Text = $Sub; $s.Foreground = New-Brush '#6B7280'; $s.FontSize = 11; $s.TextWrapping = 'Wrap'
+    $s.Text = $Sub; $s.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'Muted'); $s.FontSize = 11; $s.TextWrapping = 'Wrap'
     [void]$sp.Children.Add($t); [void]$sp.Children.Add($v); [void]$sp.Children.Add($s)
     $b.Child = $sp
     return $b
@@ -639,7 +778,7 @@ function Start-Maintenance([string[]]$Keys, [bool]$Simulate) {
     $ui.TxtTempDays.Text = "$days"
     $ui.TxtLog.Clear()
     $ui.TxtSummary.Text = ''
-    $ui.TxtSummary.Foreground = New-Brush '#111827'
+    $ui.TxtSummary.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'Fg')
     $ui.BtnOpenLog.IsEnabled = $false
     $ui.Progress.Value = 0
     $ui.TxtProgressDetail.Text = ''
@@ -686,7 +825,7 @@ function Start-Maintenance([string[]]$Keys, [bool]$Simulate) {
         $script:Readers += New-Object psobject -Property @{ Shell = $p; Handle = $p.BeginInvoke() }
     }
     Set-RunningState $true
-    if (-not $SelfTest) { $script:Timer.Start() }
+    if (-not $SelfTest) { Save-Settings; $script:Timer.Start() }
 }
 
 function Receive-RunOutput {
@@ -876,6 +1015,127 @@ $script:Tools = @(
 )
 
 # ----------------------------------------------------------------------------
+#  Tema y preferencias
+# ----------------------------------------------------------------------------
+
+$script:Themes = @{
+    Claro  = @{ AppBg = '#F3F4F6'; CardBg = '#FFFFFF'; InputBg = '#FFFFFF'; Fg = '#111827'; Muted = '#6B7280'; Line = '#E5E7EB'; Line2 = '#D1D5DB'; Hover = '#DBEAFE' }
+    Oscuro = @{ AppBg = '#0B1120'; CardBg = '#1E293B'; InputBg = '#0F172A'; Fg = '#E5E7EB'; Muted = '#94A3B8'; Line = '#334155'; Line2 = '#475569'; Hover = '#1E3A8A' }
+}
+
+function Set-Theme([string]$Mode) {
+    $dark = $(if ($Mode -eq 'Auto') { Test-SystemDarkMode } else { $Mode -eq 'Oscuro' })
+    $palette = $(if ($dark) { $script:Themes.Oscuro } else { $script:Themes.Claro })
+    foreach ($k in $palette.Keys) { $window.Resources[$k] = New-Brush $palette[$k] }
+    $label = @{ Auto = 'automático'; Claro = 'claro'; Oscuro = 'oscuro' }
+    $ui.BtnTheme.Content = 'Tema: ' + $label[$Mode]
+    $script:IsDark = $dark
+}
+
+function Save-Settings {
+    try {
+        $d = 0
+        if ([int]::TryParse($ui.TxtTempDays.Text, [ref]$d) -and $d -ge 1 -and $d -le 365) { $script:Settings.TempDays = $d }
+        $script:Settings.MaintSteps = @(Get-StepChecks $ui.MaintSteps)
+        if ($ui.TxtSpacePath.Text) { $script:Settings.SpacePath = $ui.TxtSpacePath.Text }
+        Save-AppSettings $script:Settings
+    } catch { }
+}
+
+# ----------------------------------------------------------------------------
+#  Espacio en disco (análisis en segundo plano)
+# ----------------------------------------------------------------------------
+
+$script:Space = $null
+
+function Start-SpaceScan {
+    if ($script:Space) { return }
+    $path = $ui.TxtSpacePath.Text.Trim()
+    if (-not $path -or -not (Test-Path -LiteralPath $path -PathType Container)) { Show-Info 'Elige una carpeta que exista.'; return }
+    $progress = [hashtable]::Synchronized(@{ Count = 0 })
+    $rs = [runspacefactory]::CreateRunspace()
+    $rs.Open()
+    $ps = [powershell]::Create()
+    $ps.Runspace = $rs
+    [void]$ps.AddScript({
+            param($Engine, $Path, $Progress)
+            . $Engine
+            Get-SpaceReport -Path $Path -TopFiles 100 -Progress $Progress
+        }).AddArgument($script:Engine).AddArgument($path).AddArgument($progress)
+    $script:Space = New-Object psobject -Property @{ Shell = $ps; Runspace = $rs; Handle = $ps.BeginInvoke(); Progress = $progress; Started = Get-Date }
+    $ui.BtnSpaceRun.IsEnabled = $false
+    $ui.BtnSpaceCancel.IsEnabled = $true
+    $ui.GridSpaceFolders.ItemsSource = $null
+    $ui.GridSpaceFiles.ItemsSource = $null
+    $ui.TxtSpaceStatus.Text = 'Analizando...'
+    $script:Settings.SpacePath = $path
+    if (-not $SelfTest) { $script:SpaceTimer.Start() }
+}
+
+function Receive-SpaceScan {
+    $sc = $script:Space
+    if (-not $sc) { return }
+    if (-not $sc.Handle.IsCompleted) {
+        $ui.TxtSpaceStatus.Text = ('Analizando... {0:N0} archivos ({1:N0} s)' -f $sc.Progress.Count, ((Get-Date) - $sc.Started).TotalSeconds)
+        return
+    }
+    $script:SpaceTimer.Stop()
+    $script:Space = $null
+    $ui.BtnSpaceRun.IsEnabled = $true
+    $ui.BtnSpaceCancel.IsEnabled = $false
+    try {
+        $res = @($sc.Shell.EndInvoke($sc.Handle))
+        if ($sc.Shell.Streams.Error.Count -gt 0 -and $res.Count -eq 0) { throw $sc.Shell.Streams.Error[0].Exception }
+        $r = $res[-1]
+        $ui.GridSpaceFolders.ItemsSource = @($r.Carpetas)
+        $ui.GridSpaceFiles.ItemsSource = @($r.ArchivosGrandes)
+        $txt = ('{0} en {1:N0} archivos, {2:N0} s' -f (Format-Size $r.TotalBytes), $r.Archivos, ((Get-Date) - $sc.Started).TotalSeconds)
+        if ($r.Errores) { $txt += (' ({0} carpetas sin permiso de lectura)' -f $r.Errores) }
+        $ui.TxtSpaceStatus.Text = $txt
+        $script:LastSpace = $r
+    } catch {
+        if ($sc.Shell.InvocationStateInfo.State -eq 'Stopped') { $ui.TxtSpaceStatus.Text = 'Cancelado.' }
+        else { $ui.TxtSpaceStatus.Text = 'Error: ' + $_.Exception.Message }
+    } finally {
+        try { $sc.Shell.Dispose(); $sc.Runspace.Close(); $sc.Runspace.Dispose() } catch { }
+    }
+}
+
+function Stop-SpaceScan {
+    if ($script:Space) { try { $script:Space.Shell.BeginStop($null, $null) | Out-Null } catch { } }
+}
+
+function Open-InExplorer([string]$Path, [bool]$Select) {
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return }
+    if ($Select) { Open-Target 'explorer.exe' ('/select,"' + $Path + '"') } else { Open-Target 'explorer.exe' ('"' + $Path + '"') }
+}
+
+# ----------------------------------------------------------------------------
+#  Rendimiento
+# ----------------------------------------------------------------------------
+
+$script:PerfSample = $null
+
+function Update-Perf {
+    $u = Get-ProcessUsage -Previous $script:PerfSample
+    $script:PerfSample = $u.Sample
+    $rows = @($u.Rows | Where-Object { $_.Id -ne 0 -and $_.Nombre -ne 'Idle' })
+    if ($ui.RbPerfMem.IsChecked) { $rows = @($rows | Sort-Object MemoriaBytes -Descending) }
+    else { $rows = @($rows | Sort-Object @{ Expression = 'Cpu'; Descending = $true }, @{ Expression = 'MemoriaBytes'; Descending = $true }) }
+    $ui.GridPerf.ItemsSource = @($rows | Select-Object -First 25)
+    $ui.PerfCards.Children.Clear()
+    $st = Get-QuickStatus
+    $c = $(if ($u.CpuTotal -gt 85) { $script:Brush.Bad } elseif ($u.CpuTotal -gt 60) { $script:Brush.Warn } else { $script:Brush.Ok })
+    [void]$ui.PerfCards.Children.Add((New-Card 'Procesador' ("$($u.CpuTotal)%") ("$([Environment]::ProcessorCount) núcleos lógicos") $c))
+    if ($st.RamTotalGB -gt 0) {
+        $used = 100 * (1 - $st.RamFreeGB / $st.RamTotalGB)
+        $c = $(if ($used -gt 90) { $script:Brush.Bad } elseif ($used -gt 75) { $script:Brush.Warn } else { $script:Brush.Ok })
+        [void]$ui.PerfCards.Children.Add((New-Card 'Memoria' ('{0:N0}%' -f $used) ('{0:N1} GB libres de {1:N1} GB' -f $st.RamFreeGB, $st.RamTotalGB) $c))
+    }
+    [void]$ui.PerfCards.Children.Add((New-Card 'Procesos' "$($rows.Count)" 'En ejecución ahora' $script:Brush.Info))
+}
+
+# ----------------------------------------------------------------------------
 #  Enlaces de eventos
 # ----------------------------------------------------------------------------
 
@@ -956,6 +1216,38 @@ $ui.BtnShortcut.Add_Click({ Invoke-Safe {
             else { Show-Info 'No se pudo crear el acceso directo.' }
         } })
 
+$ui.BtnTheme.Add_Click({
+        $next = @{ Auto = 'Claro'; Claro = 'Oscuro'; Oscuro = 'Auto' }
+        $script:Settings.Theme = $next[$script:Settings.Theme]
+        Set-Theme $script:Settings.Theme
+        Save-Settings
+    })
+$ui.BtnSpaceRun.Add_Click({ Invoke-Safe { Start-SpaceScan } })
+$ui.BtnSpaceCancel.Add_Click({ Stop-SpaceScan })
+$ui.BtnSpaceUser.Add_Click({ $ui.TxtSpacePath.Text = $env:USERPROFILE; Invoke-Safe { Start-SpaceScan } })
+$ui.BtnSpaceDownloads.Add_Click({ $ui.TxtSpacePath.Text = (Join-Path $env:USERPROFILE 'Downloads'); Invoke-Safe { Start-SpaceScan } })
+$ui.BtnSpaceDrive.Add_Click({
+        if (Confirm-Action 'Analizar toda la unidad puede tardar varios minutos. ¿Continuar?') { $ui.TxtSpacePath.Text = $env:SystemDrive + '\'; Invoke-Safe { Start-SpaceScan } }
+    })
+$ui.BtnSpaceBrowse.Add_Click({
+        Add-Type -AssemblyName System.Windows.Forms
+        $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+        $dlg.Description = 'Elige la carpeta que quieres analizar'
+        if ($ui.TxtSpacePath.Text -and (Test-Path -LiteralPath $ui.TxtSpacePath.Text)) { $dlg.SelectedPath = $ui.TxtSpacePath.Text }
+        if ($dlg.ShowDialog() -eq 'OK') { $ui.TxtSpacePath.Text = $dlg.SelectedPath }
+    })
+$ui.GridSpaceFolders.Add_MouseDoubleClick({ $s = $ui.GridSpaceFolders.SelectedItem; if ($s) { Open-InExplorer $s.Ruta $false } })
+$ui.GridSpaceFiles.Add_MouseDoubleClick({ $s = $ui.GridSpaceFiles.SelectedItem; if ($s) { Open-InExplorer $s.Ruta $true } })
+$ui.RbPerfCpu.Add_Checked({ if ($ui.PagePerf.Visibility -eq 'Visible') { Invoke-Safe { Update-Perf } } })
+$ui.RbPerfMem.Add_Checked({ if ($ui.PagePerf.Visibility -eq 'Visible') { Invoke-Safe { Update-Perf } } })
+$ui.BtnPerfTaskmgr.Add_Click({ Open-Target 'taskmgr.exe' '' })
+
+$script:SpaceTimer = New-Object System.Windows.Threading.DispatcherTimer
+$script:SpaceTimer.Interval = [TimeSpan]::FromMilliseconds(400)
+$script:SpaceTimer.Add_Tick({ try { Receive-SpaceScan } catch { } })
+$script:PerfTimer = New-Object System.Windows.Threading.DispatcherTimer
+$script:PerfTimer.Interval = [TimeSpan]::FromSeconds(2)
+$script:PerfTimer.Add_Tick({ try { Update-Perf } catch { } })
 $script:Timer = New-Object System.Windows.Threading.DispatcherTimer
 $script:Timer.Interval = [TimeSpan]::FromMilliseconds(200)
 $script:Timer.Add_Tick({ try { Receive-RunOutput } catch { Add-LogLine ('Error de interfaz: ' + $_.Exception.Message) } })
@@ -965,15 +1257,21 @@ $window.Add_Closing({
         if ($script:Proc -and -not $script:Proc.HasExited) {
             if (Confirm-Action 'Hay un mantenimiento en curso. Si cierras, se cancelará. ¿Cerrar de todos modos?') {
                 & taskkill.exe /PID $script:Proc.Id /T /F | Out-Null
-            } else { $e.Cancel = $true }
+            } else { $e.Cancel = $true; return }
         }
+        Stop-SpaceScan
+        Save-Settings
     })
 
 # ----------------------------------------------------------------------------
 #  Estado inicial
 # ----------------------------------------------------------------------------
 
-New-StepChecks $ui.MaintSteps $script:RecSteps
+$script:Settings = Get-AppSettings
+Set-Theme $script:Settings.Theme
+New-StepChecks $ui.MaintSteps $script:Settings.MaintSteps
+$ui.TxtTempDays.Text = "$($script:Settings.TempDays)"
+$ui.TxtSpacePath.Text = $script:Settings.SpacePath
 New-StepChecks $ui.SchSteps @('Diagnostico', 'Temporales', 'Caches', 'Dns', 'Optimizar')
 $daysEs = [ordered]@{ Monday = 'Lunes'; Tuesday = 'Martes'; Wednesday = 'Miércoles'; Thursday = 'Jueves'; Friday = 'Viernes'; Saturday = 'Sábado'; Sunday = 'Domingo' }
 $ui.CmbSchDay.ItemsSource = @($daysEs.Keys | ForEach-Object { New-Object psobject -Property @{ K = $_; L = $daysEs[$_] } })
@@ -1011,7 +1309,7 @@ if ($SelfTest) {
     try { Update-History; Check $true 'historial' } catch { Check $false ('historial: ' + $_) }
     Update-PowerPlan
     Check ($ui.TxtPowerPlan.Text.Length -gt 0) 'plan de energia'
-    foreach ($p in 'PageHome', 'PageMaint', 'PageStartup', 'PageSchedule', 'PageHistory', 'PageTools') { Show-Page $p }
+    foreach ($p in $script:Pages) { Show-Page $p }
     Check ($ui.PageTools.Visibility -eq 'Visible') 'navegacion entre secciones'
 
     try {
@@ -1035,6 +1333,37 @@ if ($SelfTest) {
     Check ($ui.TxtSummary.Text -like 'Simulaci*') ('resumen: ' + $ui.TxtSummary.Text)
     if ($script:LastLogDir) { Check (Test-Path -LiteralPath (Join-Path $script:LastLogDir 'resumen.log')) 'resumen.log creado' }
     if ($script:LastLogDir -and (Test-Path -LiteralPath $script:LastLogDir)) { Remove-Item -LiteralPath $script:LastLogDir -Recurse -Force -ErrorAction SilentlyContinue }
+    try {
+        Update-Perf
+        Start-Sleep -Milliseconds 600
+        Update-Perf
+        Check (@($ui.GridPerf.ItemsSource).Count -gt 0) 'rendimiento lista procesos'
+        Check ($ui.PerfCards.Children.Count -ge 2) 'rendimiento con tarjetas'
+    } catch { Check $false ('rendimiento: ' + $_.Exception.Message) }
+
+    $spaceDir = Join-Path ([IO.Path]::GetTempPath()) ('mb-space-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path (Join-Path $spaceDir 'grande') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $spaceDir 'chica') -Force | Out-Null
+    [IO.File]::WriteAllBytes((Join-Path $spaceDir 'grandeideo.bin'), (New-Object byte[] 3000000))
+    [IO.File]::WriteAllBytes((Join-Path $spaceDir 'chica
+ota.txt'), (New-Object byte[] 1000))
+    $ui.TxtSpacePath.Text = $spaceDir
+    Start-SpaceScan
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($script:Space -and $sw.Elapsed.TotalSeconds -lt 60) { Receive-SpaceScan; Start-Sleep -Milliseconds 100 }
+    $folders = @($ui.GridSpaceFolders.ItemsSource)
+    Check ($folders.Count -eq 2 -and $folders[0].Nombre -eq 'grande') ('espacio: carpetas ordenadas por tamano (' + (($folders | ForEach-Object { $_.Nombre }) -join ',') + ')')
+    Check (@($ui.GridSpaceFiles.ItemsSource)[0].Nombre -eq 'video.bin') 'espacio: archivo mas grande primero'
+    Check (Test-Path -LiteralPath (Join-Path $spaceDir 'grandeideo.bin')) 'espacio: no borra nada'
+    Remove-Item -LiteralPath $spaceDir -Recurse -Force -ErrorAction SilentlyContinue
+
+    foreach ($m in 'Oscuro', 'Claro', 'Auto') { Set-Theme $m }
+    Set-Theme 'Oscuro'
+    Check ($window.Resources['CardBg'].Color.ToString() -eq '#FF1E293B') 'tema oscuro aplicado'
+    Update-Home
+    Check ($ui.HomeCards.Children.Count -ge 3) 'inicio se redibuja con tema oscuro'
+    Set-Theme 'Claro'
+
     try { $window.Close() } catch { }
     Write-Host ''
     if ($script:fail) { Write-Host "$($script:fail) comprobacion(es) fallaron."; exit 1 }

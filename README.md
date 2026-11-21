@@ -37,9 +37,15 @@ No hay que instalar nada: usa Windows PowerShell 5.1 y WPF, que vienen con Windo
 
 **Tareas programadas.** Crea mantenimientos recurrentes (diario, semanal, cada 2 o cada 4 semanas, con día y hora) eligiendo qué pasos hacer. Se pueden pausar, reanudar, ejecutar al momento o eliminar. Se guardan en la carpeta `\MaintenanceTool\` del Programador de tareas de Windows y se ejecutan en segundo plano mientras tu sesión está iniciada; si el equipo estaba apagado, se ejecutan en cuanto se pueda. Al terminar muestran una notificación de Windows con el espacio liberado o los errores.
 
+**Espacio en disco.** Analiza una carpeta (tu usuario, Descargas, la unidad entera o la que elijas) y muestra qué subcarpetas y qué archivos ocupan más. Solo lectura: doble clic abre el elemento en el Explorador para que decidas tú qué borrar.
+
+**Rendimiento.** Programas que más CPU y memoria consumen en este momento, actualizado cada 2 segundos. Solo lectura.
+
 **Historial.** Todas las ejecuciones (manuales y programadas) con su registro completo.
 
 **Herramientas.** Crear acceso directo, abrir la carpeta de registros, cambio de plan de energía (Equilibrado / Alto rendimiento) y accesos directos a Administrador de tareas, Monitor de recursos, Liberador de espacio, Optimizar unidades, Sensor de almacenamiento, Windows Update, aplicaciones instaladas, Restaurar sistema, Visor de eventos, Servicios, etc.
+
+**Tema y preferencias.** El botón *Tema* de la barra lateral cambia entre automático (sigue a Windows), claro y oscuro. La aplicación recuerda el tema, los pasos elegidos, los días de temporales y la última carpeta analizada en `%APPDATA%\MaintenanceTool\settings.json`.
 
 ### Pasos de mantenimiento
 
@@ -92,6 +98,8 @@ Cada cambio se prueba en Windows con GitHub Actions (`.github/workflows/test.yml
 - Tareas programadas: crea, modifica, pausa, reanuda y elimina una tarea, y rechaza datos no válidos.
 - Registros: borra solo ejecuciones antiguas creadas por la herramienta y combina el historial de varias carpetas.
 - Acceso directo y notificación.
+- Preferencias (incluidos archivos corruptos o con valores no válidos), analizador de espacio (tamaños correctos, sin seguir enlaces, sin borrar nada) y uso de procesos.
+- En la interfaz: sección Rendimiento, análisis de espacio en segundo plano y cambio a tema oscuro.
 - **Interfaz gráfica**: abre la ventana, recorre todas las secciones y ejecuta una simulación real a través de ella.
 - Simulación completa y ejecución real de los pasos seguros desde la consola.
 
