@@ -428,7 +428,7 @@ $script:LastLogDir = $null
 $reader = New-Object System.Xml.XmlNodeReader $xaml
 $window = [Windows.Markup.XamlReader]::Load($reader)
 $ui = @{}
-foreach ($n in $xaml.SelectNodes('//*[@*[local-name()="Name"]]')) {
+foreach ($n in $xaml.SelectNodes('//*[@*[local-name()="Name"]][not(ancestor::*[local-name()="ControlTemplate"])]')) {
     $name = $n.Attributes | Where-Object { $_.LocalName -eq 'Name' } | Select-Object -First 1 -ExpandProperty Value
     $ui[$name] = $window.FindName($name)
 }
