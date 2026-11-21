@@ -1,0 +1,69 @@
+name: test
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sintaxis y ASCII (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $bad = 0
+          foreach ($f in 'Maintenance.ps1', 'tests\Test-Maintenance.ps1') {
+            $tokens = $null; $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$tokens, [ref]$errors)
+            foreach ($e in $errors) { Write-Host "$f : $($e.Extent.StartLineNumber) : $($e.Message)"; $bad++ }
+          }
+          foreach ($f in 'Maintenance.ps1', 'MaintenanceScript.bat') {
+            $bytes = [IO.File]::ReadAllBytes((Resolve-Path $f))
+            if (@($bytes | Where-Object { $_ -gt 127 }).Count) { Write-Host "$f contiene caracteres no ASCII"; $bad++ }
+          }
+          if ($bad) { exit 1 }
+
+      - name: Pruebas del borrado seguro
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests\Test-Maintenance.ps1
+
+      - name: Simulacion completa desde el .bat
+        shell: cmd
+        run: |
+          call MaintenanceScript.bat -DryRun -Unattended -LogRoot "%RUNNER_TEMP%\logs-dry"
+          if errorlevel 1 exit /b 1
+          dir /s /b "%RUNNER_TEMP%\logs-dry\resumen.log" || exit /b 1
+
+      - name: Ejecucion real de los pasos seguros
+        shell: cmd
+        run: |
+          call MaintenanceScript.bat -Unattended -Steps Diagnostico,Temporales,Caches,Dns,Bateria,Procesos -LogRoot "%RUNNER_TEMP%\logs-real"
+          if errorlevel 1 exit /b 1
+          dir /s /b "%RUNNER_TEMP%\logs-real\resumen.log" || exit /b 1
+
+      - name: Paso desconocido debe fallar
+        shell: cmd
+        run: |
+          call MaintenanceScript.bat -Unattended -Steps NoExiste -LogRoot "%RUNNER_TEMP%\logs-bad"
+          if not errorlevel 2 exit /b 1
+          exit /b 0
+
+      - name: Mostrar resumenes
+        if: always()
+        shell: powershell
+        run: |
+          Get-ChildItem $env:RUNNER_TEMP -Recurse -Filter resumen.log -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Host "===== $($_.FullName)"; Get-Content $_.FullName }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs
+          path: ${{ runner.temp }}/logs-*
+          if-no-files-found: ignore

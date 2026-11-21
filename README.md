@@ -1,36 +1,78 @@
-## MaintenanceBat 2.0
+## MaintenanceBat 3.0
 
-Script `.bat` para dar mantenimiento a un equipo con Windows 10/11.
+Herramienta de mantenimiento para equipos con Windows 10/11.
+
+`MaintenanceScript.bat` es el lanzador (pide permisos de administrador) y `Maintenance.ps1` contiene la lógica. **Los dos archivos deben estar en la misma carpeta.**
 
 ### Uso
 
-1. Guarda tu trabajo y cierra los navegadores.
-2. Doble clic en `MaintenanceScript.bat` y acepta el aviso de administrador.
-3. Elige **[1] Completo recomendado** o **[2] Personalizado**.
-4. Al terminar se abre la carpeta de registros en `Escritorio\Maintenance\<fecha>`.
+1. Descarga el proyecto completo.
+2. Guarda tu trabajo y cierra los navegadores.
+3. Doble clic en `MaintenanceScript.bat` y acepta el aviso de administrador.
+4. Elige una opción del menú:
 
-### Qué hace
+| Opción | Qué hace |
+|--------|----------|
+| 1 | Mantenimiento completo recomendado |
+| 2 | Personalizado: pregunta paso a paso |
+| 3 | **Simulación**: muestra qué haría y cuánto espacio liberaría, sin cambiar nada |
+| 4 | Solo diagnóstico (no modifica nada) |
+| 5 | Programar la ejecución automática cada 4 semanas |
+| 6 | Quitar la tarea programada |
 
-| # | Paso | Detalle |
-|---|------|---------|
-| 0 | Punto de restauración | Se crea antes de tocar nada (si Protección del sistema está activa). |
-| 1 | Liberar espacio | `cleanmgr` solo con categorías seguras. No toca Papelera ni Descargas. |
-| 2 | Reparar Windows | `DISM /RestoreHealth` y después `sfc /scannow`, con progreso visible. |
-| 3 | Windows Update | Lanza la búsqueda de actualizaciones. |
-| 4 | Microsoft Store | `wsreset` (solo en modo personalizado). |
-| 5 | Temporales | Solo archivos con más de 7 días en `%TEMP%` y `C:\Windows\Temp`. |
-| 6 | Caché de navegadores | Chrome, Edge y Firefox: **solo caché**. Si el navegador está abierto, se omite. |
-| 7 | DNS | `ipconfig /flushdns` |
-| 8 | Batería | `battery-report.html` en la carpeta de registros. |
-| 9 | Procesos | `tasklist.txt` |
-| 10 | Mantenimiento automático | `MSchedExe Start` (solo en modo personalizado). |
+Al terminar se muestra un resumen (estado de cada paso, espacio liberado y avisos) y se abre la carpeta de registros en `Escritorio\Maintenance\<fecha>`.
+
+> La primera vez, usa la opción **3 (Simulación)** para ver qué haría en tu equipo.
+
+### Pasos
+
+| Paso | Clave | Recomendado | Detalle |
+|------|-------|:-----------:|---------|
+| Punto de restauración | `Restore` | sí | Se crea antes de tocar nada, si Protección del sistema está activa. |
+| Diagnóstico | `Diagnostico` | sí | Espacio libre, salud de los discos (SMART), RAM, programas de inicio, errores del sistema de los últimos 7 días, reinicio pendiente. Solo lectura. |
+| Liberar espacio | `Disco` | sí | `cleanmgr` solo con categorías seguras. No toca Papelera ni Descargas. |
+| Reparar Windows | `Reparar` | sí | `DISM /RestoreHealth` y después `sfc /scannow`, con progreso visible. |
+| Windows Update | `Update` | sí | Lanza la búsqueda de actualizaciones. |
+| Microsoft Store | `Store` | no | `wsreset`. |
+| Temporales | `Temporales` | sí | Solo archivos con más de 7 días en `%TEMP%` y `C:\Windows\Temp`. |
+| Caché de aplicaciones | `Caches` | sí | Chrome, Edge, Brave, Vivaldi, Opera, Opera GX, Firefox y Teams: **solo caché**. Si la aplicación está abierta, se omite. |
+| Optimizar unidad | `Optimizar` | sí | `defrag /O`: TRIM en SSD, desfragmentar en HDD. |
+| Actualizar programas | `Apps` | no | `winget upgrade --all`. |
+| DNS | `Dns` | sí | `ipconfig /flushdns` |
+| Batería | `Bateria` | sí | `battery-report.html` |
+| Procesos | `Procesos` | sí | `tasklist.txt` |
+| Mantenimiento automático | `AutoMant` | no | `MSchedExe Start` |
+
+### Línea de comandos
+
+```bat
+MaintenanceScript.bat -DryRun
+MaintenanceScript.bat -Unattended
+MaintenanceScript.bat -Unattended -Steps Temporales,Caches,Dns
+MaintenanceScript.bat -Unattended -Skip Reparar,Optimizar
+MaintenanceScript.bat -DiagnosticOnly
+MaintenanceScript.bat -TempDays 14
+MaintenanceScript.bat -InstallTask
+MaintenanceScript.bat -RemoveTask
+```
+
+- `-Unattended`: sin preguntas ni pausas, con los pasos recomendados.
+- `-Steps` / `-Skip`: lista de claves de la tabla anterior.
+- `-InstallTask`: crea la tarea `MaintenanceTool` (sábados 12:00, cada 4 semanas). Si mueves la carpeta, vuelve a crearla.
 
 ### Qué NO hace (a propósito)
 
 - No borra perfiles de navegador: marcadores, contraseñas, historial y extensiones quedan intactos.
 - No borra `*.tmp` por todo el disco.
 - No vacía la carpeta de temporales completa mientras hay programas usándola.
+- No sigue ni borra enlaces o junctions.
 - No cierra programas a la fuerza.
+
+### Pruebas
+
+Cada cambio se prueba automáticamente en Windows con GitHub Actions (`.github/workflows/test.yml`): sintaxis, pruebas del borrado seguro sobre carpetas falsas (`tests\Test-Maintenance.ps1`), una simulación completa y una ejecución real de los pasos seguros.
+
+Lo que **no** se prueba automáticamente porque necesita un escritorio real o tarda demasiado: `cleanmgr`, `DISM /RestoreHealth` + `sfc`, `wsreset`, `defrag`, `winget`, el punto de restauración, la tarea programada y el aviso de elevación (UAC).
 
 ### Por qué la versión 1.x rompía el equipo
 
