@@ -192,6 +192,41 @@ try {
     Assert ($h.Count -eq 2) 'historial ignora carpetas sin resumen'
     Assert ($h[0].Fecha -eq '04/03/2026 11:30' -and $h[0].Modo -eq 'Simulacion') 'historial ordenado, con fecha y modo'
 
+    Write-Host 'Limpieza de registros antiguos'
+    $lr = Join-Path $base 'logs'
+    $old = Join-Path $lr ((Get-Date).AddDays(-120).ToString('yyyy-MM-dd_HH-mm-ss'))
+    $recent = Join-Path $lr ((Get-Date).AddDays(-5).ToString('yyyy-MM-dd_HH-mm-ss'))
+    $noLog = Join-Path $lr ((Get-Date).AddDays(-200).ToString('yyyy-MM-dd_HH-mm-ss'))
+    $other = Join-Path $lr 'Mis cosas'
+    New-TestFile (Join-Path $old 'resumen.log')
+    New-TestFile (Join-Path $old 'sub\tasklist.txt')
+    New-TestFile (Join-Path $recent 'resumen.log')
+    New-TestFile (Join-Path $noLog 'otro.txt')
+    New-TestFile (Join-Path $other 'resumen.log') 400
+    $gone = Remove-OldLogs -Root $lr -Days 90
+    Assert ($gone -eq 1) ('borra 1 ejecucion antigua (dio ' + $gone + ')')
+    Assert (-not (Test-Path -LiteralPath $old)) 'la ejecucion antigua desaparece'
+    Assert (Test-Path -LiteralPath $recent) 'conserva la reciente'
+    Assert (Test-Path -LiteralPath (Join-Path $noLog 'otro.txt')) 'no toca carpetas sin resumen.log'
+    Assert (Test-Path -LiteralPath (Join-Path $other 'resumen.log')) 'no toca carpetas con otro nombre'
+    Assert ((Remove-OldLogs -Root (Join-Path $base 'no-existe') -Days 90) -eq 0) 'carpeta inexistente: no hace nada'
+    $h2 = @(Get-RunHistory @($hist, $lr))
+    Assert ($h2.Count -eq 3) ('historial combina varias carpetas (' + $h2.Count + ')')
+
+    if ($onWindows) {
+        Write-Host 'Notificacion'
+        $n = Show-Notification 'Maintenance Tool' 'Prueba automatica'
+        Assert ($n -is [bool]) ('Show-Notification no lanza errores (devolvio ' + $n + ')')
+
+        Write-Host 'Acceso directo'
+        $made = @(New-AppShortcut -Locations @('Desktop'))
+        try {
+            Assert ($made.Count -eq 1 -and (Test-Path -LiteralPath $made[0])) 'crea el acceso directo'
+            $sc = (New-Object -ComObject WScript.Shell).CreateShortcut($made[0])
+            Assert ($sc.TargetPath -like '*\MaintenanceApp.bat') ('apunta a MaintenanceApp.bat (' + $sc.TargetPath + ')')
+        } finally { foreach ($m in $made) { Remove-Item -LiteralPath $m -Force -ErrorAction SilentlyContinue } }
+    }
+
     # ------------------------------------------------------------------ varios
     Write-Host 'Varios'
     $keys = @(Get-StepList | ForEach-Object { $_.Key })

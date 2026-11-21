@@ -1,4 +1,4 @@
-## Maintenance Tool 4.0
+## Maintenance Tool
 
 Aplicación de mantenimiento para agilizar equipos con Windows 10/11. Tiene interfaz gráfica, tareas programadas recurrentes y un modo consola para usuarios avanzados.
 
@@ -13,7 +13,16 @@ No hay que instalar nada: usa Windows PowerShell 5.1 y WPF, que vienen con Windo
 | `MaintenanceApp.ps1` | Interfaz gráfica. |
 | `Maintenance.ps1` | Motor: toda la lógica de limpieza, diagnóstico, arranque y tareas programadas. |
 
-**Los cuatro archivos deben estar en la misma carpeta.** Descarga el proyecto completo (botón *Code → Download ZIP* en GitHub), descomprímelo y haz doble clic en `MaintenanceApp.bat`.
+**Los cuatro archivos deben estar en la misma carpeta.**
+
+### Instalación
+
+1. Ve a **[Releases](../../releases/latest)** y descarga `MaintenanceTool-<versión>.zip`.
+2. Descomprímelo en una carpeta fija, por ejemplo `Documentos\MaintenanceTool`.
+3. Doble clic en `MaintenanceApp.bat` y acepta el aviso de administrador.
+4. En **Herramientas**, pulsa **Crear acceso directo** para tenerlo en el Escritorio y en el menú Inicio.
+
+> **"Windows protegió su PC"**: SmartScreen avisa porque el programa no está firmado digitalmente (un certificado de firma cuesta dinero cada año). Pulsa *Más información* → *Ejecutar de todas formas*. Si prefieres revisarlo antes, todo el código está en este repositorio en texto plano.
 
 ### Secciones de la aplicación
 
@@ -26,11 +35,11 @@ No hay que instalar nada: usa Windows PowerShell 5.1 y WPF, que vienen con Windo
 
 **Arranque de Windows.** Lista de programas que se abren al iniciar sesión, con botones para desactivarlos o volver a activarlos. Usa el mismo interruptor que el Administrador de tareas: no se borra nada.
 
-**Tareas programadas.** Crea mantenimientos recurrentes (diario, semanal, cada 2 o cada 4 semanas, con día y hora) eligiendo qué pasos hacer. Se pueden pausar, reanudar, ejecutar al momento o eliminar. Se guardan en la carpeta `\MaintenanceTool\` del Programador de tareas de Windows y se ejecutan en segundo plano mientras tu sesión está iniciada; si el equipo estaba apagado, se ejecutan en cuanto se pueda.
+**Tareas programadas.** Crea mantenimientos recurrentes (diario, semanal, cada 2 o cada 4 semanas, con día y hora) eligiendo qué pasos hacer. Se pueden pausar, reanudar, ejecutar al momento o eliminar. Se guardan en la carpeta `\MaintenanceTool\` del Programador de tareas de Windows y se ejecutan en segundo plano mientras tu sesión está iniciada; si el equipo estaba apagado, se ejecutan en cuanto se pueda. Al terminar muestran una notificación de Windows con el espacio liberado o los errores.
 
 **Historial.** Todas las ejecuciones (manuales y programadas) con su registro completo.
 
-**Herramientas.** Cambio de plan de energía (Equilibrado / Alto rendimiento) y accesos directos a Administrador de tareas, Monitor de recursos, Liberador de espacio, Optimizar unidades, Sensor de almacenamiento, Windows Update, aplicaciones instaladas, Restaurar sistema, Visor de eventos, Servicios, etc.
+**Herramientas.** Crear acceso directo, abrir la carpeta de registros, cambio de plan de energía (Equilibrado / Alto rendimiento) y accesos directos a Administrador de tareas, Monitor de recursos, Liberador de espacio, Optimizar unidades, Sensor de almacenamiento, Windows Update, aplicaciones instaladas, Restaurar sistema, Visor de eventos, Servicios, etc.
 
 ### Pasos de mantenimiento
 
@@ -51,7 +60,7 @@ No hay que instalar nada: usa Windows PowerShell 5.1 y WPF, que vienen con Windo
 | Procesos | `Procesos` | sí | `tasklist.txt` |
 | Mantenimiento automático | `AutoMant` | no | `MSchedExe Start` |
 
-Los registros se guardan en `Escritorio\Maintenance\<fecha>`.
+Los registros se guardan en `Documentos\Maintenance\<fecha>` y los de más de 90 días se borran solos (solo carpetas creadas por esta herramienta). El Historial también muestra los registros antiguos del Escritorio de la versión 4.0.
 
 ### Consola y línea de comandos
 
@@ -62,6 +71,7 @@ MaintenanceScript.bat -Unattended -Steps Temporales,Caches,Dns
 MaintenanceScript.bat -Unattended -Skip Reparar,Optimizar
 MaintenanceScript.bat -DiagnosticOnly
 MaintenanceScript.bat -TempDays 14
+MaintenanceScript.bat -Unattended -KeepLogDays 30 -NoNotify
 ```
 
 ### Qué NO hace (a propósito)
@@ -80,8 +90,12 @@ Cada cambio se prueba en Windows con GitHub Actions (`.github/workflows/test.yml
 - Borrado seguro sobre carpetas falsas: solo borra lo antiguo, no sigue enlaces, rechaza carpetas protegidas y conserva marcadores, contraseñas, extensiones e historial.
 - Arranque: desactiva y reactiva un programa de prueba sin borrar su entrada.
 - Tareas programadas: crea, modifica, pausa, reanuda y elimina una tarea, y rechaza datos no válidos.
+- Registros: borra solo ejecuciones antiguas creadas por la herramienta y combina el historial de varias carpetas.
+- Acceso directo y notificación.
 - **Interfaz gráfica**: abre la ventana, recorre todas las secciones y ejecuta una simulación real a través de ella.
 - Simulación completa y ejecución real de los pasos seguros desde la consola.
+
+Cuando las pruebas pasan en `master`, `.github/workflows/release.yml` publica automáticamente un Release con el ZIP (uno por versión; la versión está en `$script:AppVersion` de `Maintenance.ps1`).
 
 Lo que **no** se prueba automáticamente porque necesita un escritorio real o tarda demasiado: `cleanmgr`, `DISM /RestoreHealth` + `sfc`, `wsreset`, `defrag`, `winget`, el punto de restauración, el aviso de administrador (UAC) y que una tarea programada se dispare sola a su hora.
 

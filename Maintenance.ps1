@@ -11,11 +11,13 @@ param(
     [switch]$InstallTask,
     [switch]$RemoveTask,
     [switch]$NoPause,
-    [switch]$GuiMode
+    [switch]$GuiMode,
+    [switch]$NoNotify,
+    [int]$KeepLogDays = 90
 )
 
 # ============================================================================
-#  Maintenance Tool 4.0  (compatible con Windows PowerShell 5.1)
+#  Maintenance Tool  (compatible con Windows PowerShell 5.1)
 #
 #  Reglas de seguridad:
 #   - Solo se borra dentro de carpetas de cache / temporales conocidas.
@@ -28,6 +30,7 @@ param(
 #  Este archivo debe mantenerse en ASCII puro (PowerShell 5.1 lo lee como ANSI).
 # ============================================================================
 
+$script:AppVersion = '4.1.0'
 $script:TaskName = 'MaintenanceTool'
 $script:TaskPath = '\MaintenanceTool\'
 $script:GuiMode = [bool]$GuiMode
@@ -556,9 +559,75 @@ function Remove-MaintenanceTask {
 # ----------------------------------------------------------------------------
 
 function Get-DefaultLogRoot {
+    $docs = [Environment]::GetFolderPath('MyDocuments')
+    if (-not $docs -or -not (Test-Path -LiteralPath $docs)) { $docs = $env:USERPROFILE }
+    return (Join-Path $docs 'Maintenance')
+}
+
+function Get-LegacyLogRoot {
+    # Hasta la version 4.0 los registros iban al Escritorio.
     $desktop = [Environment]::GetFolderPath('Desktop')
-    if (-not $desktop -or -not (Test-Path -LiteralPath $desktop)) { $desktop = $env:USERPROFILE }
+    if (-not $desktop) { return $null }
     return (Join-Path $desktop 'Maintenance')
+}
+
+function Remove-OldLogs {
+    # Borra ejecuciones con mas de $Days dias. Solo toca carpetas cuyo nombre
+    # es una fecha generada por esta herramienta y que contienen resumen.log.
+    param([string]$Root, [int]$Days = 90, [string]$Except)
+    $removed = 0
+    if ($Days -lt 1 -or -not $Root -or -not (Test-Path -LiteralPath $Root -PathType Container)) { return $removed }
+    $limit = (Get-Date).AddDays(-$Days)
+    foreach ($d in @(Get-ChildItem -LiteralPath $Root -Directory -ErrorAction SilentlyContinue)) {
+        if ($d.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+        if ($d.Name -notmatch '^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$') { continue }
+        if ($Except -and ($d.FullName -ieq $Except)) { continue }
+        if (-not (Test-Path -LiteralPath (Join-Path $d.FullName 'resumen.log'))) { continue }
+        $when = $null
+        try { $when = [datetime]::ParseExact($d.Name, 'yyyy-MM-dd_HH-mm-ss', $null) } catch { continue }
+        if ($when -ge $limit) { continue }
+        [void](Invoke-SafeClean -Path $d.FullName -Simulate $false)
+        try { [IO.Directory]::Delete($d.FullName, $false); $removed++ } catch { }
+    }
+    return $removed
+}
+
+function Show-Notification {
+    # Notificacion de Windows (para tareas programadas, que corren ocultas).
+    param([string]$Title, [string]$Text)
+    try {
+        $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+        $null = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]
+        $esc = { param($t) [Security.SecurityElement]::Escape($t) }
+        $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
+        $xml.LoadXml(('<toast><visual><binding template="ToastGeneric"><text>{0}</text><text>{1}</text></binding></visual></toast>' -f (& $esc $Title), (& $esc $Text)))
+        $appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+        [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show((New-Object Windows.UI.Notifications.ToastNotification $xml))
+        return $true
+    } catch { return $false }
+}
+
+function New-AppShortcut {
+    # Crea accesos directos a MaintenanceApp.bat. Devuelve las rutas creadas.
+    param([string[]]$Locations = @('Desktop', 'Programs'))
+    $target = Join-Path $PSScriptRoot 'MaintenanceApp.bat'
+    if (-not (Test-Path -LiteralPath $target)) { throw 'No se encuentra MaintenanceApp.bat junto a Maintenance.ps1.' }
+    $shell = New-Object -ComObject WScript.Shell
+    $made = @()
+    foreach ($loc in $Locations) {
+        $dir = [Environment]::GetFolderPath($loc)
+        if (-not $dir -or -not (Test-Path -LiteralPath $dir)) { continue }
+        $lnk = Join-Path $dir 'Maintenance Tool.lnk'
+        $sc = $shell.CreateShortcut($lnk)
+        $sc.TargetPath = $target
+        $sc.WorkingDirectory = $PSScriptRoot
+        $sc.WindowStyle = 7
+        $sc.IconLocation = (Join-Path $env:SystemRoot 'System32\cleanmgr.exe') + ',0'
+        $sc.Description = 'Mantenimiento y limpieza del equipo'
+        $sc.Save()
+        $made += $lnk
+    }
+    return $made
 }
 
 function Get-QuickStatus {
@@ -591,11 +660,14 @@ function Get-QuickStatus {
 }
 
 function Get-RunHistory {
-    # Ejecuciones anteriores, de la mas reciente a la mas antigua.
-    param([string]$Root)
+    # Ejecuciones anteriores (de una o varias carpetas), de la mas reciente a la mas antigua.
+    param([string[]]$Roots)
     $out = @()
-    if (-not $Root -or -not (Test-Path -LiteralPath $Root -PathType Container)) { return $out }
-    $dirs = @(Get-ChildItem -LiteralPath $Root -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending)
+    $dirs = @()
+    foreach ($Root in @($Roots | Where-Object { $_ } | Select-Object -Unique)) {
+        if (Test-Path -LiteralPath $Root -PathType Container) { $dirs += @(Get-ChildItem -LiteralPath $Root -Directory -ErrorAction SilentlyContinue) }
+    }
+    $dirs = @($dirs | Sort-Object Name -Descending)
     foreach ($d in $dirs) {
         $log = Join-Path $d.FullName 'resumen.log'
         if (-not (Test-Path -LiteralPath $log)) { continue }
@@ -823,7 +895,7 @@ function Invoke-Main {
 
     Write-Host ''
     Write-Host ' =========================================='
-    Write-Host '   Maintenance Tool 4.0'
+    Write-Host ('   Maintenance Tool ' + $script:AppVersion)
     Write-Host ' =========================================='
     Write-Host ('   Usuario: ' + $env:USERNAME)
 
@@ -927,6 +999,17 @@ function Invoke-Main {
 
     if ($interactive -and -not $NoPause) {
         try { Start-Process -FilePath 'explorer.exe' -ArgumentList ('"' + $script:LogDir + '"') } catch { }
+    }
+    if (-not $LogRoot) {
+        $gone = Remove-OldLogs -Root $root -Days $KeepLogDays -Except $script:LogDir
+        if ($gone -gt 0) { Write-Host ('   Registros antiguos eliminados: ' + $gone) }
+    }
+    if ($Unattended -and -not $script:GuiMode -and -not $NoNotify) {
+        $title = $(if ($errors -gt 0) { 'Mantenimiento con errores' } elseif ($script:Simulate) { 'Simulacion terminada' } else { 'Mantenimiento terminado' })
+        $body = ('Liberado en {0}: {1}.' -f $env:SystemDrive, (Format-Size ([Math]::Max(0, $freeAfter - $freeBefore))))
+        if ($errors -gt 0) { $body = ('{0} paso(s) con error. Revisa el historial.' -f $errors) }
+        elseif ($script:Warnings.Count) { $body += ' Avisos: ' + ($script:Warnings -join ' / ') }
+        [void](Show-Notification $title $body)
     }
     Write-Marker ('END|{0}|{1}|{2}|{3}' -f $(if ($errors -gt 0) { 1 } else { 0 }), [long]$freeBefore, [long]$freeAfter, $script:LogDir)
     Wait-Exit $(if ($errors -gt 0) { 1 } else { 0 })

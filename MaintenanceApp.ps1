@@ -4,7 +4,7 @@
 )
 
 # ============================================================================
-#  Maintenance Tool 4.0 - interfaz gráfica (WPF, Windows PowerShell 5.1)
+#  Maintenance Tool - interfaz gráfica (WPF, Windows PowerShell 5.1)
 #  Toda la lógica de limpieza vive en Maintenance.ps1; esta ventana solo la
 #  muestra, la configura y la lanza en un proceso aparte.
 # ============================================================================
@@ -23,6 +23,7 @@ if (-not (Test-Path -LiteralPath $script:Engine)) {
 $ErrorActionPreference = 'Continue'
 $script:IsAdmin = Test-IsAdmin
 $script:LogRoot = Get-DefaultLogRoot
+$script:HistoryRoots = @($script:LogRoot, (Get-LegacyLogRoot))
 $script:Proc = $null
 $script:Queue = New-Object 'System.Collections.Concurrent.ConcurrentQueue[string]'
 $script:Readers = @()
@@ -152,7 +153,7 @@ $script:LastLogDir = $null
       </Grid.RowDefinitions>
       <StackPanel Margin="22,26,16,26">
         <TextBlock Text="Maintenance" Foreground="White" FontSize="20" FontWeight="Bold"/>
-        <TextBlock Text="Tool 4.0" Foreground="#60A5FA" FontSize="13"/>
+        <TextBlock x:Name="TxtVersion" Text="Tool" Foreground="#60A5FA" FontSize="13"/>
       </StackPanel>
       <StackPanel Grid.Row="1" x:Name="NavPanel">
         <Button x:Name="NavHome" Style="{StaticResource Nav}" Tag="PageHome" Content="Inicio"/>
@@ -413,6 +414,16 @@ $script:LastLogDir = $null
           </Border>
           <Border Style="{StaticResource Card}">
             <StackPanel>
+              <TextBlock Style="{StaticResource H2}" Text="Esta aplicación"/>
+              <WrapPanel>
+                <Button x:Name="BtnShortcut" Style="{StaticResource Primary}" Content="Crear acceso directo (Escritorio y menú Inicio)"/>
+                <Button x:Name="BtnLogFolder" Style="{StaticResource Btn}" Content="Carpeta de registros"/>
+              </WrapPanel>
+              <TextBlock x:Name="TxtAppInfo" Foreground="#6B7280" FontSize="12" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Border>
+          <Border Style="{StaticResource Card}">
+            <StackPanel>
               <TextBlock Style="{StaticResource H2}" Text="Windows"/>
               <WrapPanel x:Name="ToolsPanel"/>
             </StackPanel>
@@ -557,7 +568,7 @@ function Update-Home {
         [void]$ui.HomeCards.Children.Add((New-Card 'Salud de discos' $txt (($st.Disks | ForEach-Object { "$($_.Name) [$($_.Media)]" }) -join ', ') $c))
     }
 
-    $last = @(Get-RunHistory $script:LogRoot | Where-Object { $_.Modo -eq 'Real' } | Select-Object -First 1)
+    $last = @(Get-RunHistory $script:HistoryRoots | Where-Object { $_.Modo -eq 'Real' } | Select-Object -First 1)
     if ($last.Count) {
         [void]$ui.HomeCards.Children.Add((New-Card 'Último mantenimiento' $last[0].Fecha.Split(' ')[0] $last[0].Fecha $script:Brush.Info))
     } else {
@@ -817,7 +828,7 @@ function New-ScheduleFromForm {
 # ----------------------------------------------------------------------------
 
 function Update-History {
-    $h = @(Get-RunHistory $script:LogRoot)
+    $h = @(Get-RunHistory $script:HistoryRoots)
     $ui.GridHistory.ItemsSource = $h
     $ui.TxtHistorySub.Text = "$($h.Count) ejecución(es) guardadas en $script:LogRoot"
     $ui.TxtHistoryLog.Text = ''
@@ -935,15 +946,15 @@ foreach ($t in $script:Tools) {
     $btn.Add_Click({ param($sender, $e) Open-Target $sender.Tag[1] $sender.Tag[2] })
     [void]$ui.ToolsPanel.Children.Add($btn)
 }
-$logBtn = New-Object System.Windows.Controls.Button
-$logBtn.Content = 'Carpeta de registros'
-$logBtn.Style = $window.FindResource('Btn')
-$logBtn.Width = 190
-$logBtn.Add_Click({
+$ui.BtnLogFolder.Add_Click({
         if (-not (Test-Path -LiteralPath $script:LogRoot)) { New-Item -ItemType Directory -Path $script:LogRoot -Force | Out-Null }
         Open-Target 'explorer.exe' ('"' + $script:LogRoot + '"')
     })
-[void]$ui.ToolsPanel.Children.Add($logBtn)
+$ui.BtnShortcut.Add_Click({ Invoke-Safe {
+            $made = @(New-AppShortcut)
+            if ($made.Count) { Show-Info ("Acceso directo creado en:`n`n" + ($made -join "`n") + "`n`nSi mueves la carpeta de la aplicación, vuelve a crearlo.") }
+            else { Show-Info 'No se pudo crear el acceso directo.' }
+        } })
 
 $script:Timer = New-Object System.Windows.Threading.DispatcherTimer
 $script:Timer.Interval = [TimeSpan]::FromMilliseconds(200)
@@ -974,6 +985,8 @@ $ui.CmbSchFreq.DisplayMemberPath = 'L'
 $ui.CmbSchFreq.SelectedValuePath = 'K'
 $ui.CmbSchFreq.SelectedValue = 'Semanal'
 
+$ui.TxtVersion.Text = 'Tool ' + $script:AppVersion
+$ui.TxtAppInfo.Text = ('Versión {0}. Instalada en {1}. Los registros se guardan en {2} y se borran solos a los 90 días.' -f $script:AppVersion, $script:AppDir, $script:LogRoot)
 $ui.TxtAdmin.Text = $(if ($script:IsAdmin) { 'Administrador: sí' } else { 'Administrador: NO (funciones limitadas)' })
 $ui.TxtUser.Text = 'Usuario: ' + $env:USERNAME
 if ($InvokedBy -and ($InvokedBy -ine $env:USERNAME)) {
