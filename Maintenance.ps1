@@ -669,6 +669,7 @@ function Get-RunHistory {
     }
     $dirs = @($dirs | Sort-Object Name -Descending)
     foreach ($d in $dirs) {
+        if ($d.Name -notmatch '^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$') { continue }
         $log = Join-Path $d.FullName 'resumen.log'
         if (-not (Test-Path -LiteralPath $log)) { continue }
         $first = "$(Get-Content -LiteralPath $log -TotalCount 1 -ErrorAction SilentlyContinue)"
