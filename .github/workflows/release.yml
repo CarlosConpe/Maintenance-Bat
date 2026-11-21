@@ -1,0 +1,52 @@
+name: release
+
+# Cuando las pruebas pasan en master, publica un Release con el ZIP listo para
+# descargar. Solo se crea uno por version ($script:AppVersion en Maintenance.ps1).
+
+on:
+  workflow_run:
+    workflows: [test]
+    types: [completed]
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Publicar release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          ver=$(grep -oP "AppVersion = '\K[0-9]+\.[0-9]+\.[0-9]+" Maintenance.ps1)
+          if [ -z "$ver" ]; then echo "No se encontro la version"; exit 1; fi
+          tag="v$ver"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "La version $tag ya esta publicada; nada que hacer."
+            exit 0
+          fi
+          mkdir -p dist/MaintenanceTool
+          cp Maintenance.ps1 MaintenanceApp.ps1 MaintenanceApp.bat MaintenanceScript.bat README.md dist/MaintenanceTool/
+          (cd dist && zip -r "MaintenanceTool-$ver.zip" MaintenanceTool)
+          cat > notes.md <<NOTES
+          ## Cómo usar
+
+          1. Descarga **MaintenanceTool-$ver.zip** (abajo, en *Assets*).
+          2. Descomprímelo en una carpeta fija, por ejemplo \`Documentos\\MaintenanceTool\`.
+          3. Doble clic en **MaintenanceApp.bat** y acepta el aviso de administrador.
+          4. En *Herramientas*, pulsa **Crear acceso directo**.
+
+          La primera vez usa **Simular** para ver qué haría sin cambiar nada.
+
+          Si Windows muestra "Windows protegió su PC", pulsa *Más información* → *Ejecutar de todas formas*. Aparece porque el programa no está firmado digitalmente.
+          NOTES
+          sed -i 's/^          //' notes.md
+          gh release create "$tag" "dist/MaintenanceTool-$ver.zip" --target "$SHA" --title "Maintenance Tool $ver" --notes-file notes.md
