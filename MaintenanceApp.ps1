@@ -1344,9 +1344,8 @@ if ($SelfTest) {
     $spaceDir = Join-Path ([IO.Path]::GetTempPath()) ('mb-space-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path (Join-Path $spaceDir 'grande') -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $spaceDir 'chica') -Force | Out-Null
-    [IO.File]::WriteAllBytes((Join-Path $spaceDir 'grandeideo.bin'), (New-Object byte[] 3000000))
-    [IO.File]::WriteAllBytes((Join-Path $spaceDir 'chica
-ota.txt'), (New-Object byte[] 1000))
+    [IO.File]::WriteAllBytes((Join-Path $spaceDir 'grande\video.bin'), (New-Object byte[] 3000000))
+    [IO.File]::WriteAllBytes((Join-Path $spaceDir 'chica\nota.txt'), (New-Object byte[] 1000))
     $ui.TxtSpacePath.Text = $spaceDir
     Start-SpaceScan
     $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -1354,7 +1353,7 @@ ota.txt'), (New-Object byte[] 1000))
     $folders = @($ui.GridSpaceFolders.ItemsSource)
     Check ($folders.Count -eq 2 -and $folders[0].Nombre -eq 'grande') ('espacio: carpetas ordenadas por tamano (' + (($folders | ForEach-Object { $_.Nombre }) -join ',') + ')')
     Check (@($ui.GridSpaceFiles.ItemsSource)[0].Nombre -eq 'video.bin') 'espacio: archivo mas grande primero'
-    Check (Test-Path -LiteralPath (Join-Path $spaceDir 'grandeideo.bin')) 'espacio: no borra nada'
+    Check (Test-Path -LiteralPath (Join-Path $spaceDir 'grande\video.bin')) 'espacio: no borra nada'
     Remove-Item -LiteralPath $spaceDir -Recurse -Force -ErrorAction SilentlyContinue
 
     foreach ($m in 'Oscuro', 'Claro', 'Auto') { Set-Theme $m }
