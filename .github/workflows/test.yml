@@ -14,24 +14,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sintaxis y ASCII (Windows PowerShell 5.1)
+      - name: Sintaxis, ASCII y BOM (Windows PowerShell 5.1)
         shell: powershell
         run: |
           $bad = 0
-          foreach ($f in 'Maintenance.ps1', 'tests\Test-Maintenance.ps1') {
+          foreach ($f in 'Maintenance.ps1', 'MaintenanceApp.ps1', 'tests\Test-Maintenance.ps1') {
             $tokens = $null; $errors = $null
             [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$tokens, [ref]$errors)
             foreach ($e in $errors) { Write-Host "$f : $($e.Extent.StartLineNumber) : $($e.Message)"; $bad++ }
           }
-          foreach ($f in 'Maintenance.ps1', 'MaintenanceScript.bat') {
+          foreach ($f in 'Maintenance.ps1', 'MaintenanceScript.bat', 'MaintenanceApp.bat') {
             $bytes = [IO.File]::ReadAllBytes((Resolve-Path $f))
             if (@($bytes | Where-Object { $_ -gt 127 }).Count) { Write-Host "$f contiene caracteres no ASCII"; $bad++ }
           }
+          $b = [IO.File]::ReadAllBytes((Resolve-Path 'MaintenanceApp.ps1'))
+          if (-not ($b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF)) { Write-Host 'MaintenanceApp.ps1 debe ser UTF-8 con BOM'; $bad++ }
           if ($bad) { exit 1 }
 
       - name: Pruebas del borrado seguro
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File tests\Test-Maintenance.ps1
+
+      - name: Interfaz grafica (autoprueba con simulacion real)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -STA -File MaintenanceApp.ps1 -SelfTest
 
       - name: Simulacion completa desde el .bat
         shell: cmd

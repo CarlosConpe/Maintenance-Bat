@@ -10,11 +10,12 @@ param(
     [string]$InvokedBy,
     [switch]$InstallTask,
     [switch]$RemoveTask,
-    [switch]$NoPause
+    [switch]$NoPause,
+    [switch]$GuiMode
 )
 
 # ============================================================================
-#  Maintenance Tool 3.0  (compatible con Windows PowerShell 5.1)
+#  Maintenance Tool 4.0  (compatible con Windows PowerShell 5.1)
 #
 #  Reglas de seguridad:
 #   - Solo se borra dentro de carpetas de cache / temporales conocidas.
@@ -28,6 +29,9 @@ param(
 # ============================================================================
 
 $script:TaskName = 'MaintenanceTool'
+$script:TaskPath = '\MaintenanceTool\'
+$script:GuiMode = [bool]$GuiMode
+if ($script:GuiMode) { try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { } }
 $script:SageId = 64
 $script:CacheLeafNames = @('Cache', 'Code Cache', 'GPUCache', 'cache2', 'startupCache')
 $script:Simulate = $false
@@ -49,9 +53,16 @@ function Write-Note {
     }
 }
 
+function Write-Marker {
+    # Lineas que la interfaz grafica interpreta para mostrar el progreso.
+    param([string]$Text)
+    if ($script:GuiMode) { Write-Host ('##' + $Text) }
+}
+
 function Add-Warning {
     param([string]$Text)
     [void]$script:Warnings.Add($Text)
+    Write-Marker ('WARN|' + $Text)
     Write-Note ('AVISO: ' + $Text)
 }
 
@@ -496,6 +507,7 @@ function Invoke-Step {
     if (-not $Selected) {
         Write-Note 'Omitido.'
     } else {
+        Write-Marker ('STEP|' + $Step.Key)
         try {
             & $Step.Action | Out-Host
             if ($script:Simulate -and $Step.Changes) { $status = 'Simulado' } else { $status = 'OK' }
@@ -506,6 +518,7 @@ function Invoke-Step {
         }
     }
     $sw.Stop()
+    if ($Selected) { Write-Marker ('DONE|{0}|{1}|{2}|{3}' -f $Step.Key, $status, [int]$sw.Elapsed.TotalSeconds, ("$($script:Detail)" -replace '[\r\n|]', ' ')) }
     [void]$script:Results.Add((New-Object psobject -Property @{
                 Paso = $Step.Title; Estado = $status; Detalle = $script:Detail; Segundos = [int]$sw.Elapsed.TotalSeconds
             }))
@@ -539,6 +552,227 @@ function Remove-MaintenanceTask {
 }
 
 # ----------------------------------------------------------------------------
+#  Datos para la interfaz grafica
+# ----------------------------------------------------------------------------
+
+function Get-DefaultLogRoot {
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    if (-not $desktop -or -not (Test-Path -LiteralPath $desktop)) { $desktop = $env:USERPROFILE }
+    return (Join-Path $desktop 'Maintenance')
+}
+
+function Get-QuickStatus {
+    # Estado rapido del equipo (solo lectura) para el panel de inicio.
+    $st = @{ Os = ''; UptimeDays = 0.0; RamTotalGB = 0.0; RamFreeGB = 0.0; Volumes = @(); Disks = @(); PendingReboot = $false }
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+        $st.Os = ("$($os.Caption) $($os.Version)").Trim()
+        $st.UptimeDays = ((Get-Date) - $os.LastBootUpTime).TotalDays
+        $st.RamTotalGB = $os.TotalVisibleMemorySize / 1MB
+        $st.RamFreeGB = $os.FreePhysicalMemory / 1MB
+    } catch { }
+    try {
+        foreach ($v in @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' -ErrorAction Stop)) {
+            if (-not $v.Size) { continue }
+            $st.Volumes += New-Object psobject -Property @{ Id = $v.DeviceID; FreeBytes = [double]$v.FreeSpace; SizeBytes = [double]$v.Size; FreePct = 100 * $v.FreeSpace / $v.Size }
+        }
+    } catch { }
+    try {
+        foreach ($d in @(Get-PhysicalDisk -ErrorAction Stop)) {
+            $st.Disks += New-Object psobject -Property @{ Name = "$($d.FriendlyName)"; Media = "$($d.MediaType)"; Health = "$($d.HealthStatus)" }
+        }
+    } catch { }
+    foreach ($k in @(
+            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending',
+            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired')) {
+        if (Test-Path $k) { $st.PendingReboot = $true }
+    }
+    return $st
+}
+
+function Get-RunHistory {
+    # Ejecuciones anteriores, de la mas reciente a la mas antigua.
+    param([string]$Root)
+    $out = @()
+    if (-not $Root -or -not (Test-Path -LiteralPath $Root -PathType Container)) { return $out }
+    $dirs = @(Get-ChildItem -LiteralPath $Root -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending)
+    foreach ($d in $dirs) {
+        $log = Join-Path $d.FullName 'resumen.log'
+        if (-not (Test-Path -LiteralPath $log)) { continue }
+        $first = "$(Get-Content -LiteralPath $log -TotalCount 1 -ErrorAction SilentlyContinue)"
+        $mode = $(if ($first -match 'SIMULACION') { 'Simulacion' } else { 'Real' })
+        $when = $d.Name
+        try { $when = [datetime]::ParseExact($d.Name, 'yyyy-MM-dd_HH-mm-ss', $null).ToString('dd/MM/yyyy HH:mm') } catch { }
+        $out += New-Object psobject -Property @{ Fecha = $when; Modo = $mode; Path = $d.FullName; Log = $log }
+    }
+    return $out
+}
+
+# ----------------------------------------------------------------------------
+#  Programas de inicio (mismo mecanismo que el Administrador de tareas:
+#  se marca como desactivado en StartupApproved, no se borra nada)
+# ----------------------------------------------------------------------------
+
+function Get-StartupSources {
+    $run = 'Software\Microsoft\Windows\CurrentVersion\Run'
+    $ok = 'Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved'
+    return @(
+        @{ Label = 'Usuario';      Kind = 'Reg';    Path = "HKCU:\$run";                    Approved = "HKCU:\$ok\Run" },
+        @{ Label = 'Equipo';       Kind = 'Reg';    Path = "HKLM:\$run";                    Approved = "HKLM:\$ok\Run" },
+        @{ Label = 'Equipo (32)';  Kind = 'Reg';    Path = 'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run'; Approved = "HKLM:\$ok\Run32" },
+        @{ Label = 'Carpeta Inicio'; Kind = 'Folder'; Path = [Environment]::GetFolderPath('Startup');       Approved = "HKCU:\$ok\StartupFolder" },
+        @{ Label = 'Carpeta Inicio comun'; Kind = 'Folder'; Path = [Environment]::GetFolderPath('CommonStartup'); Approved = "HKLM:\$ok\StartupFolder" }
+    )
+}
+
+function Test-StartupApproved {
+    # Sin valor = activado. Primer byte par = activado, impar = desactivado.
+    param([string]$ApprovedKey, [string]$ValueName)
+    try {
+        $v = (Get-ItemProperty -LiteralPath $ApprovedKey -Name $ValueName -ErrorAction Stop).$ValueName
+        if ($v -is [byte[]] -and $v.Length -gt 0) { return (($v[0] -band 1) -eq 0) }
+    } catch { }
+    return $true
+}
+
+function Get-StartupApps {
+    $out = @()
+    foreach ($src in (Get-StartupSources)) {
+        if (-not $src.Path) { continue }
+        if ($src.Kind -eq 'Reg') {
+            if (-not (Test-Path -LiteralPath $src.Path)) { continue }
+            $key = Get-Item -LiteralPath $src.Path -ErrorAction SilentlyContinue
+            if (-not $key) { continue }
+            foreach ($name in $key.GetValueNames()) {
+                if (-not $name) { continue }
+                $out += New-Object psobject -Property @{
+                    Nombre = $name; Comando = "$($key.GetValue($name))"; Origen = $src.Label
+                    ApprovedKey = $src.Approved; ValueName = $name
+                    Activo = (Test-StartupApproved $src.Approved $name)
+                }
+            }
+        } else {
+            if (-not (Test-Path -LiteralPath $src.Path -PathType Container)) { continue }
+            foreach ($f in @(Get-ChildItem -LiteralPath $src.Path -File -ErrorAction SilentlyContinue)) {
+                if ($f.Name -ieq 'desktop.ini') { continue }
+                $out += New-Object psobject -Property @{
+                    Nombre = $f.BaseName; Comando = $f.FullName; Origen = $src.Label
+                    ApprovedKey = $src.Approved; ValueName = $f.Name
+                    Activo = (Test-StartupApproved $src.Approved $f.Name)
+                }
+            }
+        }
+    }
+    foreach ($o in $out) { $o | Add-Member -NotePropertyName Estado -NotePropertyValue $(if ($o.Activo) { 'Activado' } else { 'Desactivado' }) }
+    return @($out | Sort-Object Nombre)
+}
+
+function Set-StartupAppEnabled {
+    param([string]$ApprovedKey, [string]$ValueName, [bool]$Enabled)
+    if (-not $ApprovedKey -or -not $ValueName) { throw 'Entrada de inicio no valida.' }
+    if ($ApprovedKey -notmatch '\\Explorer\\StartupApproved\\(Run|Run32|StartupFolder)$') { throw 'Clave no permitida.' }
+    if (-not (Test-Path -LiteralPath $ApprovedKey)) { New-Item -Path $ApprovedKey -Force -ErrorAction Stop | Out-Null }
+    $bytes = New-Object byte[] 12
+    if ($Enabled) { $bytes[0] = 2 }
+    else {
+        $bytes[0] = 3
+        [Array]::Copy([BitConverter]::GetBytes((Get-Date).ToFileTime()), 0, $bytes, 4, 8)
+    }
+    New-ItemProperty -LiteralPath $ApprovedKey -Name $ValueName -PropertyType Binary -Value $bytes -Force -ErrorAction Stop | Out-Null
+}
+
+# ----------------------------------------------------------------------------
+#  Tareas programadas recurrentes (carpeta \MaintenanceTool\ del Programador)
+# ----------------------------------------------------------------------------
+
+function Get-FrequencyList {
+    return @(
+        @{ Key = 'Diaria';       Label = 'Cada dia' },
+        @{ Key = 'Semanal';      Label = 'Cada semana' },
+        @{ Key = 'Cada2Semanas'; Label = 'Cada 2 semanas' },
+        @{ Key = 'Cada4Semanas'; Label = 'Cada 4 semanas' }
+    )
+}
+
+function New-MaintenanceSchedule {
+    param(
+        [string]$Name,
+        [string]$Frequency = 'Semanal',
+        [string]$Day = 'Saturday',
+        [string]$Time = '12:00',
+        [string[]]$StepKeys
+    )
+    if ($Name -notmatch '^[A-Za-z0-9 _\-]{1,40}$') { throw 'El nombre solo admite letras, numeros, espacios y guiones (maximo 40).' }
+    if ($Time -notmatch '^([01]\d|2[0-3]):[0-5]\d$') { throw 'La hora debe tener el formato HH:mm, por ejemplo 13:30.' }
+    if (@(Get-FrequencyList | ForEach-Object { $_.Key }) -notcontains $Frequency) { throw 'Frecuencia no valida.' }
+    if (@([Enum]::GetNames([DayOfWeek])) -notcontains $Day) { throw 'Dia no valido.' }
+    $valid = @(Get-StepList | ForEach-Object { $_.Key })
+    $keys = @(Split-List $StepKeys)
+    if ($keys.Count -eq 0) { throw 'Elige al menos un paso.' }
+    foreach ($k in $keys) { if ($valid -notcontains $k) { throw ('Paso desconocido: ' + $k) } }
+
+    $engine = Join-Path $PSScriptRoot 'Maintenance.ps1'
+    $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $arg = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}" -Unattended -Steps {1}' -f $engine, ($keys -join ',')
+    $action = New-ScheduledTaskAction -Execute $ps -Argument $arg
+    switch ($Frequency) {
+        'Diaria'       { $trigger = New-ScheduledTaskTrigger -Daily -At $Time }
+        'Semanal'      { $trigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 -DaysOfWeek $Day -At $Time }
+        'Cada2Semanas' { $trigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 2 -DaysOfWeek $Day -At $Time }
+        'Cada4Semanas' { $trigger = New-ScheduledTaskTrigger -Weekly -WeeksInterval 4 -DaysOfWeek $Day -At $Time }
+    }
+    $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    $desc = 'MT|{0}|{1}|{2}|{3}' -f $Frequency, $Day, $Time, ($keys -join ',')
+    Register-ScheduledTask -TaskPath $script:TaskPath -TaskName $Name -Description $desc -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force -ErrorAction Stop | Out-Null
+}
+
+function Get-MaintenanceSchedules {
+    $out = @()
+    $freq = @{}
+    foreach ($f in (Get-FrequencyList)) { $freq[$f.Key] = $f.Label }
+    $days = @{ Monday = 'lunes'; Tuesday = 'martes'; Wednesday = 'miercoles'; Thursday = 'jueves'; Friday = 'viernes'; Saturday = 'sabado'; Sunday = 'domingo' }
+    foreach ($t in @(Get-ScheduledTask -TaskPath $script:TaskPath -ErrorAction SilentlyContinue)) {
+        $p = "$($t.Description)".Split('|')
+        $when = ''
+        $steps = ''
+        if ($p.Count -ge 5 -and $p[0] -eq 'MT') {
+            $when = "$($freq[$p[1]])"
+            if ($p[1] -ne 'Diaria') { $when += ', ' + $days[$p[2]] }
+            $when += ' a las ' + $p[3]
+            $steps = $p[4]
+        }
+        $next = ''
+        $last = ''
+        try {
+            $info = Get-ScheduledTaskInfo -TaskPath $script:TaskPath -TaskName $t.TaskName -ErrorAction Stop
+            if ($info.NextRunTime) { $next = $info.NextRunTime.ToString('dd/MM/yyyy HH:mm') }
+            if ($info.LastRunTime -and $info.LastRunTime.Year -gt 2000) { $last = $info.LastRunTime.ToString('dd/MM/yyyy HH:mm') }
+        } catch { }
+        $state = $(if ("$($t.State)" -eq 'Disabled') { 'Pausada' } elseif ("$($t.State)" -eq 'Running') { 'En curso' } else { 'Activa' })
+        $out += New-Object psobject -Property @{ Nombre = $t.TaskName; Cuando = $when; Pasos = $steps; Estado = $state; Proxima = $next; Ultima = $last }
+    }
+    return @($out | Sort-Object Nombre)
+}
+
+function Remove-MaintenanceSchedule {
+    param([string]$Name)
+    Unregister-ScheduledTask -TaskPath $script:TaskPath -TaskName $Name -Confirm:$false -ErrorAction Stop
+}
+
+function Set-MaintenanceScheduleEnabled {
+    param([string]$Name, [bool]$Enabled)
+    if ($Enabled) { Enable-ScheduledTask -TaskPath $script:TaskPath -TaskName $Name -ErrorAction Stop | Out-Null }
+    else { Disable-ScheduledTask -TaskPath $script:TaskPath -TaskName $Name -ErrorAction Stop | Out-Null }
+}
+
+function Start-MaintenanceSchedule {
+    param([string]$Name)
+    Start-ScheduledTask -TaskPath $script:TaskPath -TaskName $Name -ErrorAction Stop
+}
+
+# ----------------------------------------------------------------------------
 #  Programa principal
 # ----------------------------------------------------------------------------
 
@@ -562,7 +796,7 @@ function Split-List {
 
 function Wait-Exit {
     param([int]$Code)
-    if (-not $Unattended -and -not $NoPause) { Write-Host ''; [void](Read-Host '  Pulsa Enter para salir') }
+    if (-not $Unattended -and -not $NoPause -and -not $script:GuiMode) { Write-Host ''; [void](Read-Host '  Pulsa Enter para salir') }
     exit $Code
 }
 
@@ -589,7 +823,7 @@ function Invoke-Main {
 
     Write-Host ''
     Write-Host ' =========================================='
-    Write-Host '   Maintenance Tool 3.0'
+    Write-Host '   Maintenance Tool 4.0'
     Write-Host ' =========================================='
     Write-Host ('   Usuario: ' + $env:USERNAME)
 
@@ -642,11 +876,7 @@ function Invoke-Main {
 
     # --- Carpeta de registros ---
     $root = $LogRoot
-    if (-not $root) {
-        $desktop = [Environment]::GetFolderPath('Desktop')
-        if (-not $desktop -or -not (Test-Path -LiteralPath $desktop)) { $desktop = $env:USERPROFILE }
-        $root = Join-Path $desktop 'Maintenance'
-    }
+    if (-not $root) { $root = Get-DefaultLogRoot }
     $script:LogDir = Join-Path $root (Get-Date -Format 'yyyy-MM-dd_HH-mm-ss')
     try { New-Item -ItemType Directory -Path $script:LogDir -Force -ErrorAction Stop | Out-Null }
     catch {
@@ -660,6 +890,7 @@ function Invoke-Main {
     Write-Host ('   Registros: ' + $script:LogDir)
     Write-Host ('   Modo: ' + $mode)
 
+    Write-Marker ('PLAN|' + (@($stepList | Where-Object { $selected[$_.Key] } | ForEach-Object { $_.Key }) -join ','))
     $freeBefore = Get-FreeBytes
     $n = 0
     foreach ($s in $stepList) {
@@ -697,6 +928,7 @@ function Invoke-Main {
     if ($interactive -and -not $NoPause) {
         try { Start-Process -FilePath 'explorer.exe' -ArgumentList ('"' + $script:LogDir + '"') } catch { }
     }
+    Write-Marker ('END|{0}|{1}|{2}|{3}' -f $(if ($errors -gt 0) { 1 } else { 0 }), [long]$freeBefore, [long]$freeAfter, $script:LogDir)
     Wait-Exit $(if ($errors -gt 0) { 1 } else { 0 })
 }
 

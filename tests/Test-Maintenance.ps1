@@ -123,6 +123,75 @@ try {
     Assert ($open.State -eq 'Abierto') 'aplicacion abierta se omite'
     Assert (Test-Path -LiteralPath (Join-Path $ud 'Default\Cache\otra-vez')) 'y su cache no se toca'
 
+    # ------------------------------------------------- arranque y programador
+    if ($onWindows) {
+        Write-Host 'Programas de arranque'
+        $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+        $approved = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run'
+        $fake = 'MB-Test-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+        if (-not (Test-Path $runKey)) { New-Item -Path $runKey -Force | Out-Null }
+        New-ItemProperty -LiteralPath $runKey -Name $fake -Value 'notepad.exe' -PropertyType String -Force | Out-Null
+        try {
+            $e = @(Get-StartupApps | Where-Object { $_.Nombre -eq $fake })
+            Assert ($e.Count -eq 1) 'detecta el programa de arranque de prueba'
+            Assert ($e[0].Activo) 'aparece activado por defecto'
+            Set-StartupAppEnabled -ApprovedKey $e[0].ApprovedKey -ValueName $e[0].ValueName -Enabled $false
+            Assert (-not (@(Get-StartupApps | Where-Object { $_.Nombre -eq $fake })[0].Activo)) 'se desactiva'
+            Assert ((Get-ItemProperty -LiteralPath $runKey -Name $fake).$fake -eq 'notepad.exe') 'desactivar no borra la entrada'
+            Set-StartupAppEnabled -ApprovedKey $e[0].ApprovedKey -ValueName $e[0].ValueName -Enabled $true
+            Assert (@(Get-StartupApps | Where-Object { $_.Nombre -eq $fake })[0].Activo) 'se vuelve a activar'
+            $threw = $false
+            try { Set-StartupAppEnabled -ApprovedKey 'HKCU:\Software\Otra' -ValueName 'x' -Enabled $false } catch { $threw = $true }
+            Assert $threw 'rechaza claves fuera de StartupApproved'
+        } finally {
+            Remove-ItemProperty -LiteralPath $runKey -Name $fake -ErrorAction SilentlyContinue
+            Remove-ItemProperty -LiteralPath $approved -Name $fake -ErrorAction SilentlyContinue
+        }
+
+        if (Test-IsAdmin) {
+            Write-Host 'Tareas programadas'
+            $tn = 'CI Prueba ' + [guid]::NewGuid().ToString('N').Substring(0, 6)
+            try {
+                New-MaintenanceSchedule -Name $tn -Frequency 'Semanal' -Day 'Sunday' -Time '03:15' -StepKeys @('Diagnostico', 'Dns')
+                $t = @(Get-MaintenanceSchedules | Where-Object { $_.Nombre -eq $tn })
+                Assert ($t.Count -eq 1) 'crea la tarea'
+                Assert ($t[0].Pasos -eq 'Diagnostico,Dns') ('guarda los pasos (' + $t[0].Pasos + ')')
+                Assert ($t[0].Cuando -like '*domingo*03:15*') ('describe cuando (' + $t[0].Cuando + ')')
+                Assert ($t[0].Proxima.Length -gt 0) 'tiene proxima ejecucion'
+                $act = (Get-ScheduledTask -TaskPath $script:TaskPath -TaskName $tn).Actions[0]
+                Assert ($act.Arguments -like '*-Unattended -Steps Diagnostico,Dns*') 'la accion lanza el motor sin preguntas'
+                Set-MaintenanceScheduleEnabled $tn $false
+                Assert (@(Get-MaintenanceSchedules | Where-Object { $_.Nombre -eq $tn })[0].Estado -eq 'Pausada') 'se pausa'
+                Set-MaintenanceScheduleEnabled $tn $true
+                Assert (@(Get-MaintenanceSchedules | Where-Object { $_.Nombre -eq $tn })[0].Estado -eq 'Activa') 'se reanuda'
+                New-MaintenanceSchedule -Name $tn -Frequency 'Diaria' -Time '04:00' -StepKeys @('Dns')
+                Assert (@(Get-MaintenanceSchedules | Where-Object { $_.Nombre -eq $tn })[0].Cuando -eq 'Cada dia a las 04:00') 'se puede modificar'
+                foreach ($bad in @(@{ Name = 'mal/nombre'; Time = '10:00'; Keys = @('Dns') }, @{ Name = 'ok'; Time = '25:00'; Keys = @('Dns') }, @{ Name = 'ok'; Time = '10:00'; Keys = @('NoExiste') }, @{ Name = 'ok'; Time = '10:00'; Keys = @() })) {
+                    $threw = $false
+                    try { New-MaintenanceSchedule -Name $bad.Name -Time $bad.Time -StepKeys $bad.Keys } catch { $threw = $true }
+                    Assert $threw ('rechaza datos no validos: ' + $bad.Name + ' ' + $bad.Time + ' ' + ($bad.Keys -join ','))
+                }
+            } finally {
+                try { Remove-MaintenanceSchedule $tn } catch { }
+            }
+            Assert (@(Get-MaintenanceSchedules | Where-Object { $_.Nombre -eq $tn }).Count -eq 0) 'se elimina'
+        }
+
+        Write-Host 'Estado rapido e historial'
+        $q = Get-QuickStatus
+        Assert ($q.RamTotalGB -gt 0) 'Get-QuickStatus lee la memoria'
+        Assert (@($q.Volumes).Count -gt 0) 'Get-QuickStatus lee las unidades'
+    }
+    $hist = Join-Path $base 'hist'
+    New-TestFile (Join-Path $hist '2026-01-02_10-00-00\resumen.log')
+    Set-Content -LiteralPath (Join-Path $hist '2026-01-02_10-00-00\resumen.log') -Value 'Inicio: x   Modo: REAL'
+    New-TestFile (Join-Path $hist '2026-03-04_11-30-00\resumen.log')
+    Set-Content -LiteralPath (Join-Path $hist '2026-03-04_11-30-00\resumen.log') -Value 'Inicio: x   Modo: SIMULACION - no se modifica nada'
+    New-Item -ItemType Directory -Path (Join-Path $hist 'sin-log') -Force | Out-Null
+    $h = @(Get-RunHistory $hist)
+    Assert ($h.Count -eq 2) 'historial ignora carpetas sin resumen'
+    Assert ($h[0].Fecha -eq '04/03/2026 11:30' -and $h[0].Modo -eq 'Simulacion') 'historial ordenado, con fecha y modo'
+
     # ------------------------------------------------------------------ varios
     Write-Host 'Varios'
     $keys = @(Get-StepList | ForEach-Object { $_.Key })
